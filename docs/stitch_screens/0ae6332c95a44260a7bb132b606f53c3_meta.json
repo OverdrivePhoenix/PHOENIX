@@ -1,0 +1,18 @@
+{
+    "name":  "projects/2205262784469173850/screens/0ae6332c95a44260a7bb132b606f53c3",
+    "title":  "Projects",
+    "screenshot":  {
+                       "name":  "projects/2205262784469173850/screens/0ae6332c95a44260a7bb132b606f53c3/fileEntries/screenshot",
+                       "downloadUrl":  "https://stitch.googleapis.com/v1/projects/2205262784469173850/files/screenshot_000660c9b23aece901b4e07b00308cca:download",
+                       "mimeType":  "image/png"
+                   },
+    "htmlCode":  {
+                     "name":  "projects/2205262784469173850/screens/0ae6332c95a44260a7bb132b606f53c3/fileEntries/html",
+                     "downloadUrl":  "https://stitch.googleapis.com/v1/projects/2205262784469173850/files/0ae6332c95a44260a7bb132b606f53c3:download",
+                     "mimeType":  "text/html"
+                 },
+    "width":  "2560",
+    "height":  "2872",
+    "deviceType":  "DESKTOP",
+    "screenType":  "DESIGN"
+}

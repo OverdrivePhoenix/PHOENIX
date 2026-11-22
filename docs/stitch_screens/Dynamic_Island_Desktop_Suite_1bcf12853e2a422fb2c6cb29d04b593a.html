@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Dynamic Island UI Architecture &amp; Specimen Suite</title>
+<!-- Tailwind CSS v3 with Plugins -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Google Fonts: Inter for Apple-like clean typography -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind Configuration -->
+<script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            island: '#000000',
+            'island-card': '#070709',
+            'island-border': 'rgba(255, 255, 255, 0.08)',
+            'island-hover': '#161619',
+            accent: {
+              green: '#22c55e',
+              red: '#ef4444',
+              orange: '#f97316',
+              amber: '#f59e0b',
+              blue: '#3b82f6',
+              purple: '#a855f7',
+              cyan: '#06b6d4',
+            }
+          },
+          boxShadow: {
+            'island': '0 24px 48px -12px rgba(0, 0, 0, 0.35), 0 4px 12px -2px rgba(0, 0, 0, 0.25)',
+            'island-ambient': '0 12px 30px -4px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255,255,255,0.06) inset',
+            'glow-emerald': '0 0 20px rgba(34, 197, 94, 0.3)',
+            'glow-red': '0 0 20px rgba(239, 68, 68, 0.35)',
+          },
+          borderRadius: {
+            'squircle-lg': '38px',
+            'squircle-md': '28px',
+            'squircle-sm': '20px',
+          }
+        }
+      }
+    }
+  </script>
+<!-- BEGIN: Base Layout Styles -->
+<style data-purpose="layout-styles">
+    body {
+      transition: background-color 0.3s ease, color 0.3s ease;
+      font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+      -webkit-font-smoothing: antialiased;
+    }
+    
+    /* Hardware-accelerated transitions for dynamic island morphing */
+    .island-morph {
+      transition: all 0.48s cubic-bezier(0.16, 1, 0.3, 1);
+      will-change: width, height, border-radius, transform;
+    }
+
+    /* Subtle pulsing animations for live indicators */
+    @keyframes island-pulse-slow {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.45; transform: scale(0.92); }
+    }
+    .animate-island-pulse {
+      animation: island-pulse-slow 2.4s ease-in-out infinite;
+    }
+
+    /* Soundwave frequency bars animation */
+    @keyframes equalizer {
+      0%, 100% { height: 4px; }
+      50% { height: 16px; }
+    }
+    .equalizer-bar-1 { animation: equalizer 1.1s ease-in-out infinite; }
+    .equalizer-bar-2 { animation: equalizer 0.8s ease-in-out 0.2s infinite; }
+    .equalizer-bar-3 { animation: equalizer 1.3s ease-in-out 0.4s infinite; }
+    .equalizer-bar-4 { animation: equalizer 0.9s ease-in-out 0.1s infinite; }
+  </style>
+<!-- END: Base Layout Styles -->
+</head>
+<body class="bg-[#dcdde1] dark:bg-[#0c0d10] text-neutral-900 dark:text-neutral-100 min-h-screen selection:bg-neutral-900 selection:text-white dark:selection:bg-white dark:selection:text-black">
+<!-- BEGIN: MainWorkbenchContainer -->
+<div class="relative w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24">
+<!-- BEGIN: TopBarControls -->
+<header class="flex flex-wrap items-center justify-between gap-4 mb-8 pb-4 border-b border-neutral-300 dark:border-neutral-800">
+<div class="flex items-center space-x-3">
+<div class="w-8 h-8 rounded-full bg-black dark:bg-white flex items-center justify-center shadow-sm">
+<span class="w-3.5 h-3.5 rounded-full bg-emerald-500 animate-ping opacity-75"></span>
+</div>
+<div>
+<h1 class="text-lg font-bold tracking-tight text-neutral-900 dark:text-white flex items-center gap-2">
+            Dynamic Island <span class="text-xs uppercase px-2 py-0.5 rounded-full bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 font-mono tracking-wider font-semibold">Specimen Suite</span>
+</h1>
+<p class="text-xs text-neutral-500 dark:text-neutral-400">Tactile matte capsules, live telemetry cards, and multi-state morphological widgets</p>
+</div>
+</div>
+<!-- Canvas Theme and Filter Toggles -->
+<div class="flex items-center gap-3">
+<div class="flex items-center bg-neutral-200/80 dark:bg-neutral-850 p-1 rounded-full border border-neutral-300 dark:border-neutral-700/60 shadow-inner">
+<button class="px-3.5 py-1 text-xs font-medium rounded-full transition-all bg-white dark:bg-transparent text-neutral-900 dark:text-neutral-400 shadow-sm dark:shadow-none" id="themeToggleLight" onclick="setTheme('light')">
+            Light Studio
+          </button>
+<button class="px-3.5 py-1 text-xs font-medium rounded-full transition-all bg-transparent dark:bg-neutral-800 text-neutral-600 dark:text-white shadow-none dark:shadow-sm" id="themeToggleDark" onclick="setTheme('dark')">
+            Midnight Canvas
+          </button>
+</div>
+<a class="text-xs font-medium px-4 py-2 rounded-full bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 hover:opacity-90 transition-opacity" href="#specimen-gallery">
+          View All Specimens (16)
+        </a>
+</div>
+</header>
+<!-- END: TopBarControls -->
+<!-- BEGIN: LiveInteractiveDockSection -->
+<section aria-labelledby="live-dock-heading" class="mb-14">
+<div class="text-center mb-4">
+<span class="text-[11px] font-mono tracking-widest text-neutral-500 dark:text-neutral-400 uppercase">Interactive Live Rig · Click states to morph island</span>
+</div>
+<!-- Hardware Screen Bezel Simulation (Desktop Top-Notch Simulation) -->
+<div class="relative w-full max-w-4xl mx-auto h-[320px] rounded-3xl bg-neutral-100/90 dark:bg-neutral-900/90 backdrop-blur-xl border border-neutral-300/80 dark:border-neutral-800/80 p-6 flex flex-col items-center justify-between shadow-2xl overflow-hidden">
+<!-- Wallpaper Gradient Mesh Backdrop -->
+<div class="absolute inset-0 opacity-40 dark:opacity-20 pointer-events-none bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-300 via-indigo-200 to-transparent dark:from-indigo-900 dark:via-purple-950 dark:to-transparent"></div>
+<div class="absolute top-2 left-6 text-[11px] font-mono text-neutral-400 select-none">9:41 · Tuesday, Oct 24</div>
+<div class="absolute top-2 right-6 flex items-center space-x-2 text-[11px] font-mono text-neutral-400 select-none">
+<span>5G</span>
+<svg class="w-3.5 h-3.5" fill="currentColor" viewbox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L4.35 19.4c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0l1.9-1.9C9.22 19.58 10.56 20 12 20c4.97 0 9-4.03 9-9s-4.03-9-9-9z"></path></svg>
+<div class="w-4 h-2 rounded-[2px] border border-neutral-400 flex items-center p-0.5"><div class="w-full h-full bg-neutral-400 rounded-[1px]"></div></div>
+</div>
+<!-- The Morphing Dynamic Island -->
+<div class="z-20 pt-1">
+<div class="island-morph bg-black text-white shadow-island rounded-full flex items-center justify-between overflow-hidden px-4 py-2 cursor-pointer border border-white/10" id="heroIsland" style="width: 220px; height: 38px;">
+<!-- Injected by JavaScript switchInteractiveState -->
+<div class="w-full h-full flex items-center justify-between select-none" id="heroIslandContent">
+<div class="flex items-center space-x-2">
+<span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+<span class="text-xs font-medium tracking-tight">SWE-03 · Run</span>
+</div>
+<div class="flex items-center space-x-1.5 text-xs text-emerald-400 font-mono">
+<span class="equalizer-bar-1 w-0.5 bg-emerald-400 rounded-full inline-block"></span>
+<span class="equalizer-bar-2 w-0.5 bg-emerald-400 rounded-full inline-block"></span>
+<span class="equalizer-bar-3 w-0.5 bg-emerald-400 rounded-full inline-block"></span>
+<span class="ml-1 text-[11px] text-neutral-400">98%</span>
+</div>
+</div>
+</div>
+</div>
+<!-- State Selector Pills Bar -->
+<div class="z-10 flex flex-wrap items-center justify-center gap-2 p-1.5 bg-white/70 dark:bg-black/60 backdrop-blur-md rounded-full border border-neutral-300 dark:border-white/10 shadow-sm">
+<button class="state-btn text-xs px-3.5 py-1.5 rounded-full font-medium transition-all bg-neutral-900 text-white dark:bg-white dark:text-black shadow-sm" data-state="idle" onclick="setIslandState('idle')">
+            Compact Notch
+          </button>
+<button class="state-btn text-xs px-3.5 py-1.5 rounded-full font-medium transition-all text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white" data-state="music" onclick="setIslandState('music')">
+            Music Cockpit
+          </button>
+<button class="state-btn text-xs px-3.5 py-1.5 rounded-full font-medium transition-all text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white" data-state="finance" onclick="setIslandState('finance')">
+            Tesla Sparkline
+          </button>
+<button class="state-btn text-xs px-3.5 py-1.5 rounded-full font-medium transition-all text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white" data-state="gate" onclick="setIslandState('gate')">
+            HITL Auth Gate
+          </button>
+<button class="state-btn text-xs px-3.5 py-1.5 rounded-full font-medium transition-all text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white" data-state="call" onclick="setIslandState('call')">
+            Voice Briefing
+          </button>
+</div>
+</div>
+</section>
+<!-- END: LiveInteractiveDockSection -->
+<!-- BEGIN: SpecimenShowcaseHeading -->
+<div class="flex flex-col md:flex-row md:items-end justify-between mb-8 pb-3 border-b border-neutral-300 dark:border-neutral-800" id="specimen-gallery">
+<div>
+<h2 class="text-xl font-bold tracking-tight text-neutral-900 dark:text-white">Specimen Catalog &amp; Dimensions</h2>
+<p class="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">High-fidelity recreation directly derived from Reference IMAGE_2 (Finance/Trading) and IMAGE_3 (System/Activities)</p>
+</div>
+<div class="mt-3 md:mt-0 flex items-center space-x-4 text-xs font-mono text-neutral-500">
+<span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> Positive/Trading</span>
+<span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-amber-500"></span> HITL/Timers</span>
+<span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-red-500"></span> Alerts/Telemetry</span>
+</div>
+</div>
+<!-- END: SpecimenShowcaseHeading -->
+<!-- BEGIN: SpecimenGrid -->
+<!-- Grid showcasing the islands floating against an authentic desktop workbench canvas -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 items-start">
+<!-- ============================================ -->
+<!-- CARD 1: TESLA STOCK EXPANDED WIDGET (IMAGE_2) -->
+<!-- ============================================ -->
+<div class="flex flex-col items-center">
+<div class="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 mb-2 flex items-center justify-between w-full px-2">
+<span>01 · Expanded Telemetry Card</span>
+<span>348 × 164 px</span>
+</div>
+<!-- Matte Dynamic Island Card -->
+<div class="w-full max-w-[350px] h-[168px] bg-black text-white rounded-[32px] p-5 shadow-island border border-white/10 flex flex-col justify-between relative overflow-hidden group hover:scale-[1.01] transition-transform">
+<!-- Top Row: Logo, Ticker, Updated Tag -->
+<div class="flex items-center justify-between">
+<div class="flex items-center space-x-3">
+<!-- Tesla Stylized Icon -->
+<div class="text-red-500 flex items-center justify-center">
+<svg class="w-6 h-6 fill-current" viewbox="0 0 24 24">
+<path d="M12 2C8.5 2 4.5 3 2 4.8l1.3 2.1c2-1.3 5.3-2.1 8.7-2.1 3.4 0 6.7.8 8.7 2.1L22 4.8C19.5 3 15.5 2 12 2zm0 4.2c-2.3 0-5.4.6-7.5 1.8l.8 1.8c1.7-.9 4.3-1.4 6.7-1.4s5 .5 6.7 1.4l.8-1.8C17.4 6.8 14.3 6.2 12 6.2zm0 3.8c-1.8 0-4 .5-5.5 1.3l.6 1.7c1.3-.6 3.1-1 4.9-1 1.8 0 3.6.4 4.9 1l.6-1.7C16 10.5 13.8 10 12 10zM11 13h2v9h-2v-9z"></path>
+</svg>
+</div>
+<div>
+<div class="text-[10px] font-mono text-neutral-400 tracking-wider">TSLA</div>
+<div class="text-sm font-semibold tracking-tight text-white leading-tight">Tesla Inc.</div>
+</div>
+</div>
+<div class="text-right">
+<span class="text-[9px] uppercase tracking-wider text-neutral-400 block font-mono">updated</span>
+<span class="text-xs font-medium text-neutral-300">2m ago</span>
+</div>
+</div>
+<!-- Mid Row: Big Price & Change Badge -->
+<div class="flex items-baseline space-x-3 mt-1">
+<span class="text-2xl font-bold tracking-tight font-mono">£ 8,01</span>
+<div class="flex items-center space-x-1 text-emerald-400 text-xs font-mono font-medium">
+<span>+£0.92</span>
+<span class="inline-flex items-center">
+<svg class="w-3 h-3 fill-current inline" viewbox="0 0 24 24"><path d="M7 14l5-5 5 5z"></path></svg>
+                1.24%
+              </span>
+</div>
+</div>
+<!-- Bottom: Live Sparkline Vector with Glow (from IMAGE_2) -->
+<div class="relative w-full h-8 mt-1">
+<svg class="w-full h-full overflow-visible" preserveaspectratio="none" viewbox="0 0 300 40">
+<!-- Soft emerald baseline -->
+<line stroke="rgba(255,255,255,0.15)" stroke-dasharray="2 3" stroke-width="1" x1="0" x2="300" y1="20" y2="20"></line>
+<!-- Sparkline Glow -->
+<path class="filter drop-shadow-[0_0_6px_rgba(34,197,94,0.6)]" d="M 0,22 Q 40,24 60,18 T 100,28 T 130,36 T 150,22 T 180,18 T 210,12 T 240,16 T 280,10 T 300,14" fill="none" stroke="#22c55e" stroke-linecap="round" stroke-width="2.5"></path>
+</svg>
+</div>
+</div>
+</div>
+<!-- ============================================ -->
+<!-- CARD 2: TESLA HISTOGRAM BAR CHART (IMAGE_2) -->
+<!-- ============================================ -->
+<div class="flex flex-col items-center">
+<div class="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 mb-2 flex items-center justify-between w-full px-2">
+<span>02 · Telemetry Bar Matrix</span>
+<span>348 × 164 px</span>
+</div>
+<div class="w-full max-w-[350px] h-[168px] bg-black text-white rounded-[32px] p-5 shadow-island border border-white/10 flex flex-col justify-between relative overflow-hidden group hover:scale-[1.01] transition-transform">
+<!-- Top Row -->
+<div class="flex items-center justify-between">
+<div class="flex items-center space-x-3">
+<div class="text-red-500 flex items-center justify-center">
+<svg class="w-6 h-6 fill-current" viewbox="0 0 24 24">
+<path d="M12 2C8.5 2 4.5 3 2 4.8l1.3 2.1c2-1.3 5.3-2.1 8.7-2.1 3.4 0 6.7.8 8.7 2.1L22 4.8C19.5 3 15.5 2 12 2zm0 4.2c-2.3 0-5.4.6-7.5 1.8l.8 1.8c1.7-.9 4.3-1.4 6.7-1.4s5 .5 6.7 1.4l.8-1.8C17.4 6.8 14.3 6.2 12 6.2zm0 3.8c-1.8 0-4 .5-5.5 1.3l.6 1.7c1.3-.6 3.1-1 4.9-1 1.8 0 3.6.4 4.9 1l.6-1.7C16 10.5 13.8 10 12 10zM11 13h2v9h-2v-9z"></path>
+</svg>
+</div>
+<div>
+<div class="text-[10px] font-mono text-neutral-400 tracking-wider">TSLA</div>
+<div class="text-sm font-semibold tracking-tight text-white leading-tight">Tesla Inc.</div>
+</div>
+</div>
+<div class="text-right">
+<span class="text-[9px] uppercase tracking-wider text-neutral-400 block font-mono">updated</span>
+<span class="text-xs font-medium text-neutral-300">2m ago</span>
+</div>
+</div>
+<!-- 14-Day Volume Histogram Bars (Replicating S M T W T F S pattern from IMAGE_2) -->
+<div class="pt-2">
+<div class="flex items-end justify-between h-14 px-1 gap-1.5">
+<div class="w-2.5 h-11 bg-neutral-800 rounded-full"></div>
+<div class="w-2.5 h-8 bg-neutral-800 rounded-full"></div>
+<div class="w-2.5 h-12 bg-neutral-800 rounded-full"></div>
+<div class="w-2.5 h-9 bg-neutral-800 rounded-full"></div>
+<div class="w-2.5 h-7 bg-neutral-800 rounded-full"></div>
+<div class="w-2.5 h-5 bg-neutral-800 rounded-full"></div>
+<div class="w-2.5 h-6 bg-neutral-800 rounded-full"></div>
+<div class="w-2.5 h-14 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(34,197,94,0.6)]"></div>
+<div class="w-2.5 h-9 bg-neutral-800 rounded-full"></div>
+<div class="w-2.5 h-14 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(34,197,94,0.6)]"></div>
+<div class="w-2.5 h-8 bg-neutral-800 rounded-full"></div>
+<div class="w-2.5 h-10 bg-neutral-800 rounded-full"></div>
+<div class="w-2.5 h-7 bg-neutral-800 rounded-full"></div>
+<div class="w-2.5 h-6 bg-neutral-800 rounded-full"></div>
+</div>
+<!-- Day Markers -->
+<div class="flex justify-between px-1 text-[9px] font-mono text-neutral-500 mt-2">
+<span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+<span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+</div>
+</div>
+</div>
+</div>
+<!-- ============================================ -->
+<!-- CARD 3: MUSIC / PLAYBACK EXPANDED (IMAGE_3) -->
+<!-- ============================================ -->
+<div class="flex flex-col items-center">
+<div class="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 mb-2 flex items-center justify-between w-full px-2">
+<span>03 · Expanded Media Cockpit</span>
+<span>348 × 164 px</span>
+</div>
+<div class="w-full max-w-[350px] h-[168px] bg-black text-white rounded-[32px] p-5 shadow-island border border-white/10 flex flex-col justify-between group hover:scale-[1.01] transition-transform">
+<!-- Top Row: Album art, Title, Waveform -->
+<div class="flex items-center justify-between">
+<div class="flex items-center space-x-3.5">
+<!-- Sunset Gradient Artwork -->
+<div class="w-11 h-11 rounded-xl bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-500 shadow-md flex-shrink-0 flex items-center justify-center">
+<span class="text-white/80 font-bold text-xs">GL</span>
+</div>
+<div>
+<h4 class="text-sm font-semibold tracking-tight text-white">Glow</h4>
+<p class="text-xs text-neutral-400 font-normal">Echo</p>
+</div>
+</div>
+<!-- Sound Equalizer Live Token -->
+<div class="flex items-center space-x-1 px-2 py-1 rounded-full bg-neutral-900 border border-neutral-800">
+<span class="w-1 h-3 bg-rose-500 rounded-full animate-bounce"></span>
+<span class="w-1 h-4 bg-rose-400 rounded-full animate-pulse"></span>
+<span class="w-1 h-2 bg-rose-500 rounded-full"></span>
+<span class="w-1 h-3.5 bg-rose-400 rounded-full"></span>
+</div>
+</div>
+<!-- Scrub Bar -->
+<div class="space-y-1.5 my-auto">
+<div class="w-full bg-neutral-800 h-1.5 rounded-full overflow-hidden">
+<div class="bg-white h-full rounded-full" style="width: 42%"></div>
+</div>
+<div class="flex justify-between text-[10px] font-mono text-neutral-400">
+<span>1:20</span>
+<span>-2:15</span>
+</div>
+</div>
+<!-- Bottom Controls: Prev, Pause, Next, AirPlay -->
+<div class="flex items-center justify-between px-3 pt-1">
+<button aria-label="Rewind" class="text-neutral-400 hover:text-white transition-colors">
+<svg class="w-4 h-4 fill-current" viewbox="0 0 24 24"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"></path></svg>
+</button>
+<button aria-label="Pause" class="w-8 h-8 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition-transform">
+<svg class="w-4 h-4 fill-current" viewbox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"></path></svg>
+</button>
+<button aria-label="Fast Forward" class="text-neutral-400 hover:text-white transition-colors">
+<svg class="w-4 h-4 fill-current" viewbox="0 0 24 24"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"></path></svg>
+</button>
+<button aria-label="AirPlay" class="text-neutral-400 hover:text-white transition-colors">
+<svg class="w-4 h-4 fill-current" viewbox="0 0 24 24"><path d="M6 22h12l-6-6-6 6zM21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h4v-2H3V5h18v12h-4v2h4c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"></path></svg>
+</button>
+</div>
+</div>
+</div>
+<!-- ============================================ -->
+<!-- CARD 4: AMAZON QUICK BUY PILL (IMAGE_2)     -->
+<!-- ============================================ -->
+<div class="flex flex-col items-center">
+<div class="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 mb-2 flex items-center justify-between w-full px-2">
+<span>04 · Quick Action Capsule</span>
+<span>310 × 58 px</span>
+</div>
+<div class="w-full max-w-[310px] h-[58px] bg-black text-white rounded-full px-4 flex items-center justify-between shadow-island border border-white/10 group hover:border-white/20 transition-all">
+<div class="flex items-center space-x-3">
+<span class="text-amber-400 text-lg font-bold font-sans">a</span>
+<div>
+<div class="text-[9px] font-mono text-neutral-400 tracking-wider uppercase leading-none">AMZN</div>
+<div class="text-xs font-semibold text-white tracking-tight mt-0.5">Amazon Ltd.</div>
+</div>
+</div>
+<!-- 1-Click Buy Button (from IMAGE_2) -->
+<button class="h-8 px-4 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-white font-medium text-xs rounded-full flex items-center space-x-1.5 shadow-glow-emerald transition-all">
+<svg class="w-3.5 h-3.5 fill-current" viewbox="0 0 24 24"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"></path></svg>
+<span>Buy</span>
+</button>
+</div>
+</div>
+<!-- ============================================ -->
+<!-- CARD 5: AMZN SEARCH & CART CAPSULE (IMAGE_2) -->
+<!-- ============================================ -->
+<div class="flex flex-col items-center">
+<div class="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 mb-2 flex items-center justify-between w-full px-2">
+<span>05 · Dual Action Pill</span>
+<span>310 × 58 px</span>
+</div>
+<div class="w-full max-w-[310px] h-[58px] bg-black text-white rounded-full px-4 flex items-center justify-between shadow-island border border-white/10 group hover:border-white/20 transition-all">
+<div class="flex items-center space-x-3">
+<span class="text-amber-400 text-lg font-bold font-sans">a</span>
+<div>
+<div class="text-[9px] font-mono text-neutral-400 tracking-wider uppercase leading-none">AMZN</div>
+<div class="text-xs font-semibold text-white tracking-tight mt-0.5">Amazon Ltd.</div>
+</div>
+</div>
+<div class="flex items-center space-x-2">
+<!-- Search Glass Circle -->
+<button aria-label="Search" class="w-8 h-8 rounded-full bg-neutral-800 hover:bg-neutral-700 text-neutral-300 flex items-center justify-center transition-colors">
+<svg class="w-3.5 h-3.5 fill-current" viewbox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"></path></svg>
+</button>
+<!-- Emerald Cart Button -->
+<button aria-label="Cart" class="w-8 h-8 rounded-full bg-emerald-500 hover:bg-emerald-400 text-white flex items-center justify-center transition-colors shadow-glow-emerald">
+<svg class="w-3.5 h-3.5 fill-current" viewbox="0 0 24 24"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.08-.14.12-.31.12-.48 0-.55-.45-1-1-1H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"></path></svg>
+</button>
+</div>
+</div>
+</div>
+<!-- ============================================ -->
+<!-- CARD 6: TESLA PRICE CHANGE ALARM (IMAGE_2)  -->
+<!-- ============================================ -->
+<div class="flex flex-col items-center">
+<div class="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 mb-2 flex items-center justify-between w-full px-2">
+<span>06 · Alert Radial Pill</span>
+<span>310 × 58 px</span>
+</div>
+<div class="w-full max-w-[310px] h-[58px] bg-black text-white rounded-full px-4 flex items-center justify-between shadow-island border border-white/10 group hover:border-white/20 transition-all">
+<div class="flex items-center space-x-3">
+<!-- Red Notification Bell Badge -->
+<div class="relative w-8 h-8 rounded-full bg-neutral-900 border border-neutral-800 flex items-center justify-center">
+<svg class="w-4 h-4 text-white fill-current" viewbox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"></path></svg>
+<span class="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-black flex items-center justify-center text-[7px] font-bold">T</span>
+</div>
+<div>
+<div class="text-[9px] font-mono text-neutral-400 tracking-wider">Tesla, Inc.</div>
+<div class="text-xs font-semibold text-white tracking-tight">Price change</div>
+</div>
+</div>
+<!-- Circular Metric Progress %73 (Exact from IMAGE_2) -->
+<div class="relative w-9 h-9 flex items-center justify-center">
+<svg class="w-9 h-9 transform -rotate-90">
+<circle cx="18" cy="18" fill="transparent" r="14" stroke="#1f2937" stroke-width="2.5"></circle>
+<circle cx="18" cy="18" fill="transparent" r="14" stroke="#22c55e" stroke-dasharray="88" stroke-dashoffset="24" stroke-linecap="round" stroke-width="2.5"></circle>
+</svg>
+<span class="absolute text-[9px] font-bold font-mono text-emerald-400">%73</span>
+</div>
+</div>
+</div>
+<!-- ============================================ -->
+<!-- CARD 7: INCOMING CALL ACTIVE (IMAGE_3)      -->
+<!-- ============================================ -->
+<div class="flex flex-col items-center">
+<div class="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 mb-2 flex items-center justify-between w-full px-2">
+<span>07 · Voice Telephony Capsule</span>
+<span>310 × 58 px</span>
+</div>
+<div class="w-full max-w-[310px] h-[58px] bg-black text-white rounded-full px-3.5 flex items-center justify-between shadow-island border border-white/10">
+<div class="flex items-center space-x-2.5">
+<!-- Caller Avatar Placeholder -->
+<div class="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-600 to-rose-400 flex items-center justify-center text-xs font-bold text-white border border-white/20">
+              TC
+            </div>
+<div>
+<div class="text-[9px] font-mono text-neutral-400 uppercase tracking-tight">mobile</div>
+<div class="text-xs font-semibold text-white tracking-tight">Tania Castillo</div>
+</div>
+</div>
+<!-- Action Buttons: Hangup and Accept -->
+<div class="flex items-center space-x-2">
+<button aria-label="Hangup" class="w-8 h-8 rounded-full bg-red-600 hover:bg-red-500 active:scale-95 text-white flex items-center justify-center shadow-glow-red transition-all">
+<svg class="w-3.5 h-3.5 fill-current transform rotate-[135deg]" viewbox="0 0 24 24"><path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-1.57 1.97c-2.83-1.44-5.15-3.75-6.59-6.59l1.97-1.57c.28-.28.36-.67.25-1.02A11.36 11.36 0 0 1 8.5 4c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.5c0-.55-.45-1-1-1z"></path></svg>
+</button>
+<button aria-label="Accept" class="w-8 h-8 rounded-full bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-white flex items-center justify-center shadow-glow-emerald transition-all">
+<svg class="w-3.5 h-3.5 fill-current" viewbox="0 0 24 24"><path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-1.57 1.97c-2.83-1.44-5.15-3.75-6.59-6.59l1.97-1.57c.28-.28.36-.67.25-1.02A11.36 11.36 0 0 1 8.5 4c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.5c0-.55-.45-1-1-1z"></path></svg>
+</button>
+</div>
+</div>
+</div>
+<!-- ============================================ -->
+<!-- CARD 8: NAVIGATION DIRECTION (IMAGE_3)      -->
+<!-- ============================================ -->
+<div class="flex flex-col items-center">
+<div class="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 mb-2 flex items-center justify-between w-full px-2">
+<span>08 · Turn-by-Turn GPS</span>
+<span>240 × 58 px</span>
+</div>
+<div class="w-full max-w-[240px] h-[58px] bg-black text-white rounded-full px-4 flex items-center justify-between shadow-island border border-white/10">
+<div class="flex items-center space-x-3">
+<svg class="w-6 h-6 text-emerald-400 fill-current" viewbox="0 0 24 24">
+<path d="M19 15l-6-6-1.42 1.42L15.17 14H4v2h11.17l-3.59 3.58L13 21l6-6z"></path>
+</svg>
+<div>
+<div class="text-sm font-bold tracking-tight text-white font-mono leading-none">900 ft</div>
+<div class="text-[11px] text-neutral-400 tracking-tight mt-0.5">Page St</div>
+</div>
+</div>
+<!-- Live lane marker indicator -->
+<div class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></div>
+</div>
+</div>
+<!-- ============================================ -->
+<!-- CARD 9: AIRDROP TRANSFER RING (IMAGE_3)     -->
+<!-- ============================================ -->
+<div class="flex flex-col items-center">
+<div class="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 mb-2 flex items-center justify-between w-full px-2">
+<span>09 · AirDrop Radial Stream</span>
+<span>270 × 52 px</span>
+</div>
+<div class="w-full max-w-[270px] h-[52px] bg-black text-white rounded-full px-4 flex items-center justify-between shadow-island border border-white/10">
+<div class="flex items-center space-x-3">
+<!-- AirDrop Icon -->
+<div class="w-7 h-7 rounded-full bg-blue-600/20 text-blue-400 flex items-center justify-center">
+<svg class="w-4 h-4 fill-current" viewbox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6z"></path></svg>
+</div>
+<div>
+<div class="text-xs font-semibold text-white tracking-tight flex items-center gap-1.5">
+<span>AirDrop</span>
+<span class="text-[10px] text-neutral-400 font-normal">1 photo</span>
+</div>
+</div>
+</div>
+<!-- Blue Dynamic Ring -->
+<div class="relative w-7 h-7 flex items-center justify-center">
+<svg class="w-7 h-7 transform -rotate-90">
+<circle cx="14" cy="14" fill="transparent" r="11" stroke="#1e293b" stroke-width="2.5"></circle>
+<circle cx="14" cy="14" fill="transparent" r="11" stroke="#3b82f6" stroke-dasharray="69" stroke-dashoffset="18" stroke-linecap="round" stroke-width="2.5"></circle>
+</svg>
+</div>
+</div>
+</div>
+<!-- ============================================ -->
+<!-- CARD 10: TIMER RUNNING CAPSULE (IMAGE_3)    -->
+<!-- ============================================ -->
+<div class="flex flex-col items-center">
+<div class="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 mb-2 flex items-center justify-between w-full px-2">
+<span>10 · Timer Stopwatch Pill</span>
+<span>260 × 58 px</span>
+</div>
+<div class="w-full max-w-[260px] h-[58px] bg-black text-white rounded-full px-4 flex items-center justify-between shadow-island border border-white/10">
+<div class="flex items-center space-x-2">
+<!-- Pause & Dismiss Buttons (IMAGE_3) -->
+<button class="w-7 h-7 rounded-full bg-amber-500/20 text-amber-500 hover:bg-amber-500/30 flex items-center justify-center transition-colors">
+<svg class="w-3.5 h-3.5 fill-current" viewbox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"></path></svg>
+</button>
+<button class="w-7 h-7 rounded-full bg-neutral-800 text-neutral-400 hover:text-white flex items-center justify-center transition-colors">
+<svg class="w-3 h-3 fill-current" viewbox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg>
+</button>
+</div>
+<!-- Orange Time Readout -->
+<div class="text-right">
+<span class="text-[9px] font-mono uppercase text-amber-400 tracking-wider block leading-none">Timer</span>
+<span class="text-xl font-bold font-mono text-amber-500 tracking-tight">0:22</span>
+</div>
+</div>
+</div>
+<!-- ============================================ -->
+<!-- CARD 11: DO NOT DISTURB & SCREEN REC (IMAGE_3) -->
+<!-- ============================================ -->
+<div class="flex flex-col items-center">
+<div class="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 mb-2 flex items-center justify-between w-full px-2">
+<span>11 · Focus Status Capsule</span>
+<span>250 × 44 px</span>
+</div>
+<div class="w-full max-w-[250px] h-[44px] bg-black text-white rounded-full px-4 flex items-center justify-between shadow-island border border-white/10">
+<div class="flex items-center space-x-2.5">
+<div class="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
+<svg class="w-3.5 h-3.5 fill-current" viewbox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-3.03 0-5.5-2.47-5.5-5.5 0-1.82.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"></path></svg>
+</div>
+<span class="text-xs font-medium text-white tracking-tight">Do Not Disturb</span>
+</div>
+<span class="text-xs font-mono text-indigo-400 font-semibold">On</span>
+</div>
+</div>
+<!-- ============================================ -->
+<!-- CARD 12: ETHEREUM CRYPTO PILL (IMAGE_2)      -->
+<!-- ============================================ -->
+<div class="flex flex-col items-center">
+<div class="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 mb-2 flex items-center justify-between w-full px-2">
+<span>12 · Crypto Activity Notch</span>
+<span>280 × 42 px</span>
+</div>
+<!-- Embedded in status bar simulation (Exact from IMAGE_2) -->
+<div class="w-full max-w-[280px] h-[44px] bg-neutral-200 dark:bg-neutral-800 rounded-full px-3 flex items-center justify-between shadow-inner">
+<span class="text-[11px] font-mono font-medium text-neutral-700 dark:text-neutral-300">9:41 🧭</span>
+<!-- Dynamic Island Core -->
+<div class="h-[34px] px-3 bg-black rounded-full flex items-center space-x-2 border border-white/10 shadow-sm">
+<div class="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center text-[10px] font-bold text-white">Ξ</div>
+<span class="text-xs font-bold font-mono text-white">ETH</span>
+<div class="flex items-center text-[10px] font-mono text-emerald-400 font-semibold">
+<svg class="w-2.5 h-2.5 fill-current mr-0.5" viewbox="0 0 24 24"><path d="M7 14l5-5 5 5z"></path></svg>
+              1.05%
+            </div>
+</div>
+<span class="text-[10px] font-mono text-neutral-500 bg-neutral-300 dark:bg-neutral-700 px-1.5 py-0.5 rounded">32</span>
+</div>
+</div>
+<!-- ============================================ -->
+<!-- CARD 13: LOW BATTERY & FACE ID CAPSULES     -->
+<!-- ============================================ -->
+<div class="flex flex-col items-center">
+<div class="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 mb-2 flex items-center justify-between w-full px-2">
+<span>13 · System Diagnostics Dual</span>
+<span>Pair Specification</span>
+</div>
+<div class="w-full space-y-3 flex flex-col items-center">
+<!-- Low Battery (IMAGE_3) -->
+<div class="w-full max-w-[260px] h-[38px] bg-black text-white rounded-full px-3.5 flex items-center justify-between shadow-island border border-white/10">
+<span class="text-xs font-medium text-neutral-300">Low Battery</span>
+<div class="flex items-center space-x-1.5">
+<span class="text-xs font-mono text-red-500 font-bold">20%</span>
+<div class="w-5 h-2.5 rounded-sm border border-red-500/80 p-0.5 flex items-center">
+<div class="w-1.5 h-full bg-red-500 rounded-[1px]"></div>
+</div>
+</div>
+</div>
+<!-- FaceID Authenticated (IMAGE_3) -->
+<div class="w-[84px] h-[84px] bg-black text-white rounded-squircle-md flex items-center justify-center shadow-island border border-white/10">
+<svg class="w-10 h-10 text-emerald-400 stroke-current" fill="none" stroke-width="1.8" viewbox="0 0 24 24">
+<path d="M3 7V5a2 2 0 012-2h2m10 0h2a2 2 0 012 2v2m0 10v2a2 2 0 01-2 2h-2m-10 0H5a2 2 0 01-2-2v-2" stroke-linecap="round" stroke-linejoin="round"></path>
+<circle cx="9" cy="10" fill="currentColor" r="1"></circle>
+<circle cx="15" cy="10" fill="currentColor" r="1"></circle>
+<path d="M9.5 15c.8 1 2.2 1.5 2.5 1.5s1.7-.5 2.5-1.5" stroke-linecap="round"></path>
+</svg>
+</div>
+</div>
+</div>
+<!-- ============================================ -->
+<!-- CARD 14: PHOENIX AGENT HITL GATE (NEW SUITE) -->
+<!-- ============================================ -->
+<div class="flex flex-col items-center">
+<div class="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 mb-2 flex items-center justify-between w-full px-2">
+<span>14 · Autonomous HITL Gate</span>
+<span>348 × 62 px</span>
+</div>
+<div class="w-full max-w-[350px] h-[62px] bg-black text-white rounded-full px-4 flex items-center justify-between shadow-island border border-amber-500/30">
+<div class="flex items-center space-x-3">
+<div class="w-8 h-8 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center animate-pulse">
+<svg class="w-4 h-4 fill-current" viewbox="0 0 24 24"><path d="M12 2L1 21h22L12 2zm0 3.99L19.53 19H4.47L12 5.99zM11 10h2v4h-2zm0 6h2v2h-2z"></path></svg>
+</div>
+<div>
+<div class="text-[9px] font-mono text-amber-400 tracking-wider uppercase">Gate #8921</div>
+<div class="text-xs font-semibold text-white tracking-tight">Deploy to Prod?</div>
+</div>
+</div>
+<div class="flex items-center space-x-2">
+<button class="px-3 py-1 text-xs font-semibold rounded-full bg-neutral-800 text-neutral-400 hover:text-white transition-colors">
+              Reject
+            </button>
+<button class="px-3.5 py-1 text-xs font-semibold rounded-full bg-amber-500 hover:bg-amber-400 text-black font-mono transition-colors shadow-[0_0_12px_rgba(245,158,11,0.5)]">
+              Approve
+            </button>
+</div>
+</div>
+</div>
+<!-- ============================================ -->
+<!-- CARD 15: VOICE BRIEFING WAVEFORM (IMAGE_3)   -->
+<!-- ============================================ -->
+<div class="flex flex-col items-center">
+<div class="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 mb-2 flex items-center justify-between w-full px-2">
+<span>15 · Live Voice Recording</span>
+<span>270 × 44 px</span>
+</div>
+<div class="w-full max-w-[270px] h-[44px] bg-black text-white rounded-full px-4 flex items-center justify-between shadow-island border border-white/10">
+<div class="flex items-center space-x-2.5">
+<div class="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping"></div>
+<!-- Dynamic Red/Orange Equalizer (IMAGE_3) -->
+<div class="flex items-center space-x-1">
+<span class="w-0.5 h-2 bg-red-500 rounded-full animate-pulse"></span>
+<span class="w-0.5 h-4 bg-orange-400 rounded-full"></span>
+<span class="w-0.5 h-5 bg-red-500 rounded-full"></span>
+<span class="w-0.5 h-3 bg-red-400 rounded-full"></span>
+<span class="w-0.5 h-4 bg-orange-500 rounded-full"></span>
+<span class="w-0.5 h-2 bg-red-500 rounded-full"></span>
+</div>
+</div>
+<div class="text-right">
+<span class="text-xs font-mono text-red-400 font-semibold tracking-wider">01:20</span>
+</div>
+</div>
+</div>
+</div>
+<!-- END: SpecimenGrid -->
+<!-- BEGIN: DesignTokenSpecifications -->
+<footer class="mt-20 pt-8 border-t border-neutral-300 dark:border-neutral-800 text-neutral-600 dark:text-neutral-400 text-xs">
+<div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+<div>
+<h4 class="font-bold text-neutral-900 dark:text-white uppercase tracking-wider mb-2 font-mono text-[11px]">Dynamic Island DNA</h4>
+<p class="text-neutral-500 leading-relaxed text-[11px]">Pure #000000 matte containers, squircle curvature radii 28px-38px, subtle atmospheric 1px inset elevation.</p>
+</div>
+<div>
+<h4 class="font-bold text-neutral-900 dark:text-white uppercase tracking-wider mb-2 font-mono text-[11px]">Motion Curves</h4>
+<p class="font-mono text-neutral-500 text-[11px]">cubic-bezier(0.16, 1, 0.3, 1)<br/>Duration: 420ms - 520ms<br/>Zero layout jank with hardware morphs.</p>
+</div>
+<div>
+<h4 class="font-bold text-neutral-900 dark:text-white uppercase tracking-wider mb-2 font-mono text-[11px]">Color Spectrum</h4>
+<div class="flex items-center space-x-2 mt-2">
+<span class="w-4 h-4 rounded-full bg-emerald-500" title="Emerald #22c55e"></span>
+<span class="w-4 h-4 rounded-full bg-amber-500" title="Amber #f59e0b"></span>
+<span class="w-4 h-4 rounded-full bg-red-500" title="Crimson #ef4444"></span>
+<span class="w-4 h-4 rounded-full bg-blue-500" title="Electric Blue #3b82f6"></span>
+<span class="w-4 h-4 rounded-full bg-black border border-white/20" title="Matte Pitch #000000"></span>
+</div>
+</div>
+<div>
+<h4 class="font-bold text-neutral-900 dark:text-white uppercase tracking-wider mb-2 font-mono text-[11px]">System Status</h4>
+<p class="text-neutral-500 text-[11px] leading-relaxed">Specimens synchronized with Reference Sheets IMAGE_2 &amp; IMAGE_3.</p>
+</div>
+</div>
+</footer>
+<!-- END: DesignTokenSpecifications -->
+</div>
+<!-- END: MainWorkbenchContainer -->
+<!-- BEGIN: InteractiveMorphingScript -->
+<script data-purpose="dynamic-island-controller">
+    // Interactive states content dictionary
+    const states = {
+      idle: {
+        width: '210px',
+        height: '38px',
+        radius: '9999px',
+        html: `
+          <div class="w-full h-full flex items-center justify-between select-none animate-fadeIn">
+            <div class="flex items-center space-x-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span class="text-xs font-medium tracking-tight">SWE-03 · Run</span>
+            </div>
+            <div class="flex items-center space-x-1.5 text-xs text-emerald-400 font-mono">
+              <span class="equalizer-bar-1 w-0.5 bg-emerald-400 rounded-full inline-block"></span>
+              <span class="equalizer-bar-2 w-0.5 bg-emerald-400 rounded-full inline-block"></span>
+              <span class="equalizer-bar-3 w-0.5 bg-emerald-400 rounded-full inline-block"></span>
+              <span class="ml-1 text-[11px] text-neutral-400">98%</span>
+            </div>
+          </div>
+        `
+      },
+      music: {
+        width: '360px',
+        height: '148px',
+        radius: '34px',
+        html: `
+          <div class="w-full h-full flex flex-col justify-between py-1 select-none animate-fadeIn">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 via-rose-500 to-indigo-500 shadow-md flex items-center justify-center font-bold text-xs">GL</div>
+                <div>
+                  <h4 class="text-sm font-semibold tracking-tight text-white leading-tight">Glow</h4>
+                  <p class="text-xs text-neutral-400">Echo</p>
+                </div>
+              </div>
+              <div class="flex items-center space-x-1 px-2 py-0.5 rounded-full bg-neutral-900 border border-neutral-800">
+                <span class="w-1 h-3 bg-rose-500 rounded-full animate-bounce"></span>
+                <span class="w-1 h-4 bg-rose-400 rounded-full animate-pulse"></span>
+                <span class="w-1 h-2 bg-rose-500 rounded-full"></span>
+              </div>
+            </div>
+            <div class="space-y-1">
+              <div class="w-full bg-neutral-800 h-1.5 rounded-full overflow-hidden">
+                <div class="bg-white h-full rounded-full w-[42%]"></div>
+              </div>
+              <div class="flex justify-between text-[10px] font-mono text-neutral-400">
+                <span>1:20</span>
+                <span>-2:15</span>
+              </div>
+            </div>
+            <div class="flex items-center justify-between px-4 pt-1">
+              <svg class="w-4 h-4 fill-current text-neutral-400" viewBox="0 0 24 24"><path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z"/></svg>
+              <div class="w-7 h-7 rounded-full bg-white text-black flex items-center justify-center"><svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg></div>
+              <svg class="w-4 h-4 fill-current text-neutral-400" viewBox="0 0 24 24"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg>
+            </div>
+          </div>
+        `
+      },
+      finance: {
+        width: '350px',
+        height: '160px',
+        radius: '32px',
+        html: `
+          <div class="w-full h-full flex flex-col justify-between py-1 select-none animate-fadeIn">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center space-x-2">
+                <span class="text-red-500 font-bold text-base leading-none">T</span>
+                <div>
+                  <span class="text-[9px] font-mono text-neutral-400 block">TSLA</span>
+                  <span class="text-xs font-bold text-white">Tesla Inc.</span>
+                </div>
+              </div>
+              <span class="text-[10px] font-mono text-neutral-400">updated 2m ago</span>
+            </div>
+            <div class="flex items-baseline space-x-2 my-1">
+              <span class="text-2xl font-bold font-mono">£ 8,01</span>
+              <span class="text-xs font-mono text-emerald-400">+£0.92 (1.24%)</span>
+            </div>
+            <div class="w-full h-9">
+              <svg class="w-full h-full" preserveAspectRatio="none" viewBox="0 0 300 40">
+                <line x1="0" y1="20" x2="300" y2="20" stroke="rgba(255,255,255,0.15)" stroke-dasharray="2 3" stroke-width="1" />
+                <path d="M 0,22 Q 40,24 60,18 T 100,28 T 130,36 T 150,22 T 180,18 T 210,12 T 240,16 T 280,10 T 300,14" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" />
+              </svg>
+            </div>
+          </div>
+        `
+      },
+      gate: {
+        width: '350px',
+        height: '62px',
+        radius: '9999px',
+        html: `
+          <div class="w-full h-full flex items-center justify-between select-none animate-fadeIn">
+            <div class="flex items-center space-x-3">
+              <div class="w-8 h-8 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center animate-pulse">
+                <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M12 2L1 21h22L12 2zm0 3.99L19.53 19H4.47L12 5.99zM11 10h2v4h-2zm0 6h2v2h-2z"/></svg>
+              </div>
+              <div>
+                <div class="text-[9px] font-mono text-amber-400 tracking-wider uppercase">Gate #8921</div>
+                <div class="text-xs font-semibold text-white tracking-tight">Deploy to Prod?</div>
+              </div>
+            </div>
+            <div class="flex items-center space-x-2">
+              <button class="px-3 py-1 text-xs font-semibold rounded-full bg-neutral-800 text-neutral-400">Reject</button>
+              <button class="px-3.5 py-1 text-xs font-semibold rounded-full bg-amber-500 text-black font-mono">Approve</button>
+            </div>
+          </div>
+        `
+      },
+      call: {
+        width: '310px',
+        height: '58px',
+        radius: '9999px',
+        html: `
+          <div class="w-full h-full flex items-center justify-between select-none animate-fadeIn">
+            <div class="flex items-center space-x-2.5">
+              <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-600 to-rose-400 flex items-center justify-center text-xs font-bold text-white">TC</div>
+              <div>
+                <div class="text-[9px] font-mono text-neutral-400 uppercase">mobile</div>
+                <div class="text-xs font-semibold text-white">Tania Castillo</div>
+              </div>
+            </div>
+            <div class="flex items-center space-x-2">
+              <div class="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center text-white"><svg class="w-3.5 h-3.5 fill-current transform rotate-[135deg]" viewBox="0 0 24 24"><path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-1.57 1.97c-2.83-1.44-5.15-3.75-6.59-6.59l1.97-1.57c.28-.28.36-.67.25-1.02A11.36 11.36 0 0 1 8.5 4c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.5c0-.55-.45-1-1-1z"/></svg></div>
+              <div class="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-white"><svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24"><path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-1.57 1.97c-2.83-1.44-5.15-3.75-6.59-6.59l1.97-1.57c.28-.28.36-.67.25-1.02A11.36 11.36 0 0 1 8.5 4c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1 0 9.39 7.61 17 17 17 .55 0 1-.45 1-1v-3.5c0-.55-.45-1-1-1z"/></svg></div>
+            </div>
+          </div>
+        `
+      }
+    };
+
+    function setIslandState(stateKey) {
+      const island = document.getElementById('heroIsland');
+      const content = document.getElementById('heroIslandContent');
+      const target = states[stateKey];
+
+      if (!target) return;
+
+      // Update button active styles
+      document.querySelectorAll('.state-btn').forEach(btn => {
+        if (btn.getAttribute('data-state') === stateKey) {
+          btn.className = 'state-btn text-xs px-3.5 py-1.5 rounded-full font-medium transition-all bg-neutral-900 text-white dark:bg-white dark:text-black shadow-sm';
+        } else {
+          btn.className = 'state-btn text-xs px-3.5 py-1.5 rounded-full font-medium transition-all text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white';
+        }
+      });
+
+      // Morph island bounding dimensions
+      island.style.width = target.width;
+      island.style.height = target.height;
+      island.style.borderRadius = target.radius;
+
+      // Update HTML content
+      content.innerHTML = target.html;
+    }
+
+    // Canvas Workbench Theme Switcher
+    function setTheme(mode) {
+      const html = document.documentElement;
+      const btnLight = document.getElementById('themeToggleLight');
+      const btnDark = document.getElementById('themeToggleDark');
+
+      if (mode === 'dark') {
+        html.classList.add('dark');
+        btnDark.className = 'px-3.5 py-1 text-xs font-medium rounded-full transition-all bg-neutral-800 text-white shadow-sm';
+        btnLight.className = 'px-3.5 py-1 text-xs font-medium rounded-full transition-all bg-transparent text-neutral-400';
+      } else {
+        html.classList.remove('dark');
+        btnLight.className = 'px-3.5 py-1 text-xs font-medium rounded-full transition-all bg-white text-neutral-900 shadow-sm';
+        btnDark.className = 'px-3.5 py-1 text-xs font-medium rounded-full transition-all bg-transparent text-neutral-600';
+      }
+    }
+  </script>
+<!-- END: InteractiveMorphingScript -->
+</body></html>

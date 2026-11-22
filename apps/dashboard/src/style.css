@@ -1,0 +1,106 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@layer base {
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    width: 100%;
+    background-color: #0c0e11;
+    color: #e2e2e6;
+    overflow: hidden;
+  }
+
+  html.overlay-transparent,
+  body.overlay-transparent {
+    background: transparent !important;
+    background-color: transparent !important;
+  }
+}
+
+/* Custom Desktop Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #111317;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #282a2d;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #424754;
+}
+
+/* Tauri & Desktop Window Drag Regions */
+.titlebar-drag-region,
+.pywebview-drag-region {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.titlebar-no-drag,
+.pywebview-no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  display: inline-block;
+  line-height: 1;
+  text-transform: none;
+  letter-spacing: normal;
+  word-wrap: normal;
+  white-space: nowrap;
+  direction: ltr;
+  vertical-align: middle;
+}
+
+/* Dynamic Island Hardware-Accelerated Transitions & Animations */
+.island-morph {
+  transition: all 0.48s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: width, height, border-radius, transform;
+}
+
+@keyframes island-pulse-slow {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.92); }
+}
+
+.animate-island-pulse {
+  animation: island-pulse-slow 2.4s ease-in-out infinite;
+}
+
+@keyframes equalizer {
+  0%, 100% { height: 4px; }
+  50% { height: 16px; }
+}
+
+.equalizer-bar-1 { animation: equalizer 1.1s ease-in-out infinite; }
+.equalizer-bar-2 { animation: equalizer 0.8s ease-in-out 0.2s infinite; }
+.equalizer-bar-3 { animation: equalizer 1.3s ease-in-out 0.4s infinite; }
+.equalizer-bar-4 { animation: equalizer 0.9s ease-in-out 0.1s infinite; }
+
+.shadow-island {
+  box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.6), 0 4px 12px -2px rgba(0, 0, 0, 0.4);
+}
+
+.shadow-island-ambient {
+  box-shadow: 0 12px 30px -4px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+}
+
+.shadow-glow-emerald {
+  box-shadow: 0 0 24px rgba(34, 197, 94, 0.35);
+}
+
+.shadow-glow-amber {
+  box-shadow: 0 0 24px rgba(245, 158, 11, 0.4);
+}

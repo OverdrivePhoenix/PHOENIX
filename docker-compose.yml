@@ -1,0 +1,51 @@
+services:
+  firestore:
+    image: google/cloud-sdk:emulators
+    container_name: phoenix-firestore
+    command: gcloud beta emulators firestore start --host-port=0.0.0.0:8080
+    ports: ["8080:8080"]
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: phoenix-redis
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build: ./apps/api
+    container_name: phoenix-api
+    env_file: .env
+    environment:
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID:-phoenix-ai-org}
+      FIRESTORE_EMULATOR_HOST: firestore:8080
+      REDIS_URL: redis://redis:6379/0
+      POLICY_SECRET_KEY: ${POLICY_SECRET_KEY:-phoenix-super-secret-hmac-key-change-in-production}
+      CORS_ORIGINS: http://localhost:3000,http://localhost:5173,tauri://localhost
+    ports: ["8000:8000"]
+    depends_on:
+      - firestore
+      redis: {condition: service_healthy}
+    restart: unless-stopped
+
+  local-node:
+    build: ./apps/local-node
+    container_name: phoenix-local-node
+    environment:
+      PHOENIX_NODE_NAME: omen-16-rtx5060
+    ports: ["8010:8010"]
+    restart: unless-stopped
+
+  dashboard:
+    build: ./apps/dashboard
+    container_name: phoenix-desktop-app
+    ports: ["3000:3000"]
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    depends_on: [api]
+    restart: unless-stopped

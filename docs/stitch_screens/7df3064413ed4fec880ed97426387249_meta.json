@@ -1,0 +1,18 @@
+{
+    "name":  "projects/2205262784469173850/screens/7df3064413ed4fec880ed97426387249",
+    "title":  "Agents",
+    "screenshot":  {
+                       "name":  "projects/2205262784469173850/screens/7df3064413ed4fec880ed97426387249/fileEntries/screenshot",
+                       "downloadUrl":  "https://stitch.googleapis.com/v1/projects/2205262784469173850/files/screenshot_000660c9b271f4c80207a5de3530343a:download",
+                       "mimeType":  "image/png"
+                   },
+    "htmlCode":  {
+                     "name":  "projects/2205262784469173850/screens/7df3064413ed4fec880ed97426387249/fileEntries/html",
+                     "downloadUrl":  "https://stitch.googleapis.com/v1/projects/2205262784469173850/files/7df3064413ed4fec880ed97426387249:download",
+                     "mimeType":  "text/html"
+                 },
+    "width":  "2560",
+    "height":  "3148",
+    "deviceType":  "DESKTOP",
+    "screenType":  "DESIGN"
+}

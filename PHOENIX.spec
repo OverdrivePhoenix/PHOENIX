@@ -1,0 +1,98 @@
+# -*- mode: python ; coding: utf-8 -*-
+import sys
+import os
+from PyInstaller.utils.hooks import copy_metadata, collect_data_files
+
+block_cipher = None
+
+datas_list = [
+    ('apps/dashboard/dist', 'apps/dashboard/dist'),
+    ('phoenix_icon.ico', '.'),
+    ('phoenix_icon.png', '.'),
+    ('apps/local-node/app', 'apps/local-node/app'),
+    ('apps/api/app', 'app')
+]
+
+for pkg in ['agents', 'mcp', 'edge_tts']:
+    try:
+        datas_list += collect_data_files(pkg)
+    except Exception:
+        pass
+
+for pkg in ['mcp', 'openai-agents', 'edge-tts']:
+    try:
+        datas_list += copy_metadata(pkg)
+    except Exception:
+        pass
+
+a = Analysis(
+    ['desktop_launcher.py'],
+    pathex=[
+        os.path.abspath('.'),
+        os.path.abspath('apps/api')
+    ],
+    binaries=[],
+    datas=datas_list,
+    hiddenimports=[
+        'uvicorn',
+        'uvicorn.logging',
+        'uvicorn.loops',
+        'uvicorn.loops.auto',
+        'uvicorn.protocols',
+        'uvicorn.protocols.http',
+        'uvicorn.protocols.http.auto',
+        'uvicorn.protocols.websockets',
+        'uvicorn.protocols.websockets.auto',
+        'uvicorn.lifespans',
+        'uvicorn.lifespans.on',
+        'fastapi',
+        'fastapi.staticfiles',
+        'pystray',
+        'pystray._win32',
+        'PIL',
+        'PIL.Image',
+        'webview',
+        'webview.platforms.winforms',
+        'webview.platforms.edgechromium',
+        'clr',
+        'pythonnet',
+        'edge_tts',
+        'httpx',
+        'app.tts',
+        'app.tts.adapter',
+        'app.agents.jarvis'
+    ],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=['tkinter', 'matplotlib', 'unittest'],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    [],
+    name='PHOENIX',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+    icon='phoenix_icon.ico'
+)

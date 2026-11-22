@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Project PHOENIX — Autonomous AI Organization</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              surface: '#111317',
+              'surface-container-lowest': '#0c0e11',
+              'surface-container-low': '#1a1c1f',
+              'surface-container': '#1e2023',
+              'surface-container-high': '#282a2d',
+              'surface-container-highest': '#333538',
+              'surface-bright': '#37393d',
+              primary: '#adc6ff',
+              'primary-container': '#4d8eff',
+              'on-primary': '#002e6a',
+              'on-primary-container': '#00285d',
+              secondary: '#b7c8e1',
+              'secondary-container': '#3a4a5f',
+              tertiary: '#ffb786',
+              'tertiary-container': '#df7412',
+              error: '#ffb4ab',
+              'error-container': '#93000a',
+              outline: '#8c909f',
+              'outline-variant': '#424754',
+              'on-surface': '#e2e2e6',
+              'on-surface-variant': '#c2c6d6'
+            },
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              mono: ['"JetBrains Mono"', 'monospace']
+            }
+          }
+        }
+      };
+    </script>
+  </head>
+  <body class="bg-surface-container-lowest text-on-surface font-sans antialiased overflow-hidden select-none">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
