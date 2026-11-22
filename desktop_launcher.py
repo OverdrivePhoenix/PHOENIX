@@ -250,9 +250,9 @@ def set_notch_geometry(expanded: bool):
             user32.SetWindowPos.restype = wintypes.BOOL
 
             screen_w, _ = get_screen_metrics()
-            # 500x420 expanded, 300x56 collapsed gives 8-10px transparent breathing margin around the island
-            w = 500 if expanded else 300
-            h = 420 if expanded else 56
+            # 560x440 expanded, 280x52 collapsed gives 10-12px transparent breathing margin around the island
+            w = 560 if expanded else 280
+            h = 440 if expanded else 52
             x = max(0, (screen_w - w) // 2)
             y = 0
 
@@ -334,7 +334,6 @@ def configure_voice_overlay_window(expanded: bool = False):
             WS_EX_TOOLWINDOW = 0x00000080
             WS_EX_APPWINDOW = 0x00040000
             WS_EX_TOPMOST = 0x00000008
-            WS_EX_LAYERED = 0x00080000
 
             # Completely strip native window border, caption, and title bar
             style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
@@ -342,10 +341,10 @@ def configure_voice_overlay_window(expanded: bool = False):
             style |= WS_POPUP
             ctypes.windll.user32.SetWindowLongW(hwnd, GWL_STYLE, style)
 
-            # Skip Windows taskbar and Alt+Tab, force HWND_TOPMOST & WS_EX_LAYERED
+            # Skip Windows taskbar and Alt+Tab, force HWND_TOPMOST; ensure WS_EX_LAYERED is NOT set (breaks WebView2 transparency)
             ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-            ex_style |= (WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_LAYERED)
-            ex_style &= ~WS_EX_APPWINDOW
+            ex_style |= (WS_EX_TOOLWINDOW | WS_EX_TOPMOST)
+            ex_style &= ~(WS_EX_APPWINDOW | 0x00080000)
             ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style)
 
             # Extend DWM glass sheet across the entire window client area
@@ -359,15 +358,14 @@ def configure_voice_overlay_window(expanded: bool = False):
             margins = MARGINS(-1, -1, -1, -1)
             ctypes.windll.dwmapi.DwmExtendFrameIntoClientArea(hwnd, ctypes.byref(margins))
 
-            # Apply true transparency directly to WinForms Form backing canvas
+            # Apply Black backing canvas so DWM glass renders true transparency
             if voice_overlay_window and hasattr(voice_overlay_window, "native") and voice_overlay_window.native:
                 try:
                     import webview.platforms.winforms as wf
                     form = voice_overlay_window.native
                     form.MinimumSize = wf.Size(0, 0)
                     form.MaximumSize = wf.Size(0, 0)
-                    form.SetStyle(wf.WinForms.ControlStyles.SupportsTransparentBackColor, True)
-                    form.BackColor = wf.Color.Transparent
+                    form.BackColor = wf.Color.Black
                 except Exception as e:
                     log_debug(f"Form BackColor transparency notice: {e}")
 
@@ -571,8 +569,8 @@ def main():
 
     # 5. Compute primary screen top-center position for the notch pill
     screen_w, _ = get_screen_metrics()
-    init_pill_w = 300
-    init_pill_h = 56
+    init_pill_w = 280
+    init_pill_h = 52
     init_pill_x = max(0, (screen_w - init_pill_w) // 2)
     init_pill_y = 0
 

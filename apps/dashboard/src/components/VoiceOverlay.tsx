@@ -178,8 +178,13 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
       .catch(() => {});
   }, []);
 
-  // Auto-expand if high-priority approval arrives
+  // Auto-expand only when a NEW approval arrives after initial mount
+  const isMountedRef = useRef(false);
   useEffect(() => {
+    if (!isMountedRef.current) {
+      isMountedRef.current = true;
+      return;
+    }
     if (pendingApproval) {
       handleToggleExpand(true);
       setCaptionText(`Approval required: ${pendingApproval.action}`);
@@ -612,23 +617,21 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
         }}
         onContextMenu={handleContextMenu}
         style={{
-          width: isExpanded ? '480px' : '280px',
-          height: isExpanded ? '400px' : '38px',
+          width: isExpanded ? '540px' : '260px',
+          height: isExpanded ? '400px' : '36px',
           borderRadius: isExpanded ? '24px' : '9999px',
-          background: 'rgba(12, 15, 20, 0.72)',
-          backdropFilter: 'blur(22px) saturate(160%)',
-          WebkitBackdropFilter: 'blur(22px) saturate(160%)',
-          border: '1px solid rgba(255, 255, 255, 0.12)',
+          background: '#0D0F12',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
           boxShadow: isExpanded
-            ? '0 24px 64px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.08) inset'
-            : '0 8px 32px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.08) inset',
+            ? '0 24px 60px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.1)'
+            : '0 8px 24px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
           transition: 'all 320ms cubic-bezier(0.22, 1, 0.36, 1)',
           willChange: 'width, height, border-radius, box-shadow'
         }}
         className={`pointer-events-auto text-white relative flex flex-col overflow-hidden cursor-pointer select-none ${
           isExpanded
-            ? 'rounded-[24px] px-6 pt-3.5 pb-5'
-            : 'rounded-full px-1 py-0 flex-row items-center justify-between'
+            ? 'px-5 py-4'
+            : 'px-3.5 py-0 flex-row items-center justify-between'
         }`}
       >
         {/* Subtle interior ambient edge highlight */}
@@ -754,15 +757,15 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
 
             {/* APPROVAL GATE CARD (Apple Pay / Face ID Authorization Style) */}
             {pendingApproval && (
-              <div className="w-full my-2 p-3 rounded-2xl bg-gradient-to-b from-amber-500/[0.12] to-amber-950/[0.25] border border-amber-500/30 flex items-center justify-between shrink-0 shadow-lg animate-fadeIn">
-                <div className="truncate max-w-[240px] pr-2">
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-400 text-black font-bold">
+              <div className="w-full my-2.5 p-3.5 rounded-2xl bg-gradient-to-b from-amber-500/[0.12] to-amber-950/[0.25] border border-amber-500/30 flex items-center justify-between shrink-0 shadow-lg animate-fadeIn gap-3">
+                <div className="flex-1 min-w-0 pr-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-400 text-black font-bold uppercase tracking-wider shrink-0">
                       GATE #{pendingApproval.id.slice(-4)}
                     </span>
-                    <span className="text-[10px] text-amber-200/80 font-medium">Authorization Required</span>
+                    <span className="text-[11px] text-amber-200/90 font-medium">Authorization Required</span>
                   </div>
-                  <span className="text-xs text-white font-semibold truncate block leading-snug">
+                  <span className="text-xs text-white/95 font-medium block leading-snug line-clamp-2">
                     {pendingApproval.action}
                   </span>
                 </div>
@@ -777,7 +780,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
                     }}
                   >
                     <X className="w-3.5 h-3.5" />
-                    <span>Decline</span>
+                    <span>Reject</span>
                   </LiquidButton>
 
                   <LiquidButton
@@ -790,7 +793,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
                     }}
                   >
                     <Check className="w-3.5 h-3.5" />
-                    <span>Authorize</span>
+                    <span>Approve</span>
                   </LiquidButton>
                 </div>
               </div>
@@ -801,7 +804,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
               <>
                 <div className="w-full flex-1 flex flex-col items-center justify-center py-2 my-auto">
                   {/* Acoustic Glass Lens */}
-                  <div className="w-36 h-36 relative flex items-center justify-center rounded-full bg-gradient-to-b from-white/[0.05] via-transparent to-black/40 border border-white/[0.08] shadow-[inset_0_1px_2px_rgba(255,255,255,0.12),0_12px_32px_rgba(0,0,0,0.6)] overflow-hidden">
+                  <div className="w-28 h-28 relative flex items-center justify-center rounded-full bg-gradient-to-b from-white/[0.05] via-transparent to-black/40 border border-white/[0.08] shadow-[inset_0_1px_2px_rgba(255,255,255,0.12),0_12px_32px_rgba(0,0,0,0.6)] overflow-hidden">
                     <Strands
                       colors={STRANDS_COLORS}
                       count={3}
