@@ -1,7 +1,15 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
+html, body, #root, #app {
+  background: transparent !important;
+  background-color: transparent !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
 @layer base {
-  html, body, #root {
+  html, body, #root, #app {
     background: transparent !important;
     background-color: transparent !important;
     margin: 0;

@@ -275,40 +275,42 @@ export function App() {
 
   if (isVoiceOverlay || isStandaloneNotch) {
     return (
-      <VoiceOverlay
-        isStandaloneOverlay={true}
-        currentProjectName={currentProject?.name}
-        activeAgent="SWE-03 · Run"
-        pendingApproval={
-          topPendingApproval
-            ? {
-                id: topPendingApproval.id,
-                action: topPendingApproval.action,
-                risk_level: topPendingApproval.risk_level,
-                token: topPendingApproval.approval_token
-              }
-            : null
-        }
-        dailySpend={18.42}
-        isEmergencyPaused={isEmergencyPaused}
-        onApproveAction={handleApproveAction}
-        onDenyAction={handleDenyAction}
-        onOpenCommandCenter={() => {
-          fetch(`${API_BASE}/tray/restore-window`, { method: 'POST' }).catch(() => {});
-        }}
-        onCloseOverlay={() => {
-          fetch(`${API_BASE}/overlay/toggle`, { method: 'POST' }).catch(() => {});
-        }}
-        onSendCommand={async (cmd, tone) => {
-          const res = await fetch(`${API_BASE}/jarvis/command`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ transcript: cmd, tone })
-          }).then((r) => r.json());
-          await refreshData();
-          return { intent: res.intent, reply: res.spoken_reply };
-        }}
-      />
+      <div id="app" className="w-full h-full bg-transparent overflow-hidden" style={{ background: 'transparent', backgroundColor: 'transparent', margin: 0, padding: 0 }}>
+        <VoiceOverlay
+          isStandaloneOverlay={true}
+          currentProjectName={currentProject?.name}
+          activeAgent="SWE-03 · Run"
+          pendingApproval={
+            topPendingApproval
+              ? {
+                  id: topPendingApproval.id,
+                  action: topPendingApproval.action,
+                  risk_level: topPendingApproval.risk_level,
+                  token: topPendingApproval.approval_token
+                }
+              : null
+          }
+          dailySpend={18.42}
+          isEmergencyPaused={isEmergencyPaused}
+          onApproveAction={handleApproveAction}
+          onDenyAction={handleDenyAction}
+          onOpenCommandCenter={() => {
+            fetch(`${API_BASE}/tray/restore-window`, { method: 'POST' }).catch(() => {});
+          }}
+          onCloseOverlay={() => {
+            fetch(`${API_BASE}/overlay/toggle`, { method: 'POST' }).catch(() => {});
+          }}
+          onSendCommand={async (cmd, tone) => {
+            const res = await fetch(`${API_BASE}/jarvis/command`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ transcript: cmd, tone })
+            }).then((r) => r.json());
+            await refreshData();
+            return { intent: res.intent, reply: res.spoken_reply };
+          }}
+        />
+      </div>
     );
   }
 

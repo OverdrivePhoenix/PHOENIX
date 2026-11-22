@@ -567,6 +567,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
         setShowContextMenu(null);
       }}
       className="w-full h-full flex flex-col items-center justify-start overflow-hidden select-none relative pt-0 bg-transparent font-sans"
+      style={{ background: 'transparent', backgroundColor: 'transparent', margin: 0, padding: 0 }}
     >
       {/* ================= APPLE IPHONE DYNAMIC ISLAND CAPSULE ================= */}
       <div

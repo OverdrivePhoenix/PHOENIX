@@ -247,7 +247,7 @@ def set_notch_geometry(expanded: bool):
             user32 = ctypes.windll.user32
             screen_w, _ = get_screen_metrics()
             w = 480 if expanded else 230
-            h = 390 if expanded else 40
+            h = 390 if expanded else 38
             x = max(0, (screen_w - w) // 2)
             y = 0
             # HWND_TOPMOST = -1, SWP_SHOWWINDOW = 0x0040, SWP_NOACTIVATE = 0x0010
@@ -306,9 +306,12 @@ def start_global_hotkey_listener():
 
 
 def configure_voice_overlay_window(expanded: bool = False):
-    """Strips all native window chrome and positions flush at primary screen top-center (y = 0)."""
+    """Strips all native window chrome, enforces DWM transparency, and positions flush at primary screen top-center (y = 0)."""
+    global voice_overlay_window
     try:
         import ctypes
+        from ctypes import Structure, c_int
+
         hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Notch")
         if not hwnd:
             hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Voice Overlay")
@@ -323,6 +326,7 @@ def configure_voice_overlay_window(expanded: bool = False):
             WS_EX_TOOLWINDOW = 0x00000080
             WS_EX_APPWINDOW = 0x00040000
             WS_EX_TOPMOST = 0x00000008
+            WS_EX_LAYERED = 0x00080000
 
             # Completely strip native window border, caption, and title bar
             style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
@@ -330,11 +334,32 @@ def configure_voice_overlay_window(expanded: bool = False):
             style |= WS_POPUP
             ctypes.windll.user32.SetWindowLongW(hwnd, GWL_STYLE, style)
 
-            # Skip Windows taskbar and Alt+Tab, force HWND_TOPMOST
+            # Skip Windows taskbar and Alt+Tab, force HWND_TOPMOST & WS_EX_LAYERED
             ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-            ex_style |= (WS_EX_TOOLWINDOW | WS_EX_TOPMOST)
+            ex_style |= (WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_LAYERED)
             ex_style &= ~WS_EX_APPWINDOW
             ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style)
+
+            # Extend DWM glass sheet across the entire window client area
+            class MARGINS(Structure):
+                _fields_ = [
+                    ("cxLeftWidth", c_int),
+                    ("cxRightWidth", c_int),
+                    ("cyTopHeight", c_int),
+                    ("cyBottomHeight", c_int),
+                ]
+            margins = MARGINS(-1, -1, -1, -1)
+            ctypes.windll.dwmapi.DwmExtendFrameIntoClientArea(hwnd, ctypes.byref(margins))
+
+            # Apply true transparency directly to WinForms Form backing canvas
+            if voice_overlay_window and hasattr(voice_overlay_window, "native") and voice_overlay_window.native:
+                try:
+                    import webview.platforms.winforms as wf
+                    form = voice_overlay_window.native
+                    form.SetStyle(wf.WinForms.ControlStyles.SupportsTransparentBackColor, True)
+                    form.BackColor = wf.Color.Transparent
+                except Exception as e:
+                    log_debug(f"Form BackColor transparency notice: {e}")
 
             # Resize to exact dimensions and anchor at top-center (y = 0)
             set_notch_geometry(expanded)
@@ -537,7 +562,7 @@ def main():
     # 5. Compute primary screen top-center position for the notch pill
     screen_w, _ = get_screen_metrics()
     init_pill_w = 230
-    init_pill_h = 40
+    init_pill_h = 38
     init_pill_x = max(0, (screen_w - init_pill_w) // 2)
     init_pill_y = 0
 
@@ -569,7 +594,6 @@ def main():
         frameless=True,
         on_top=True,
         transparent=True,
-        background_color="#000000",
         shadow=False,
         resizable=False,
         text_select=False,
