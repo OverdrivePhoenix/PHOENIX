@@ -25,10 +25,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   return (
-    <aside className="w-56 h-[calc(100vh-2.5rem)] bg-surface-container-low border-r border-outline-variant/30 flex flex-col justify-between py-3 select-none shrink-0 font-sans">
-      <div className="flex flex-col gap-1 px-2">
-        <div className="px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-outline">
-          Navigation
+    <aside className="w-60 h-[calc(100vh-2.5rem)] bg-[#0d1015] border-r border-white/[0.08] flex flex-col justify-between py-4 select-none shrink-0 font-sans">
+      <div className="flex flex-col gap-1.5 px-3">
+        <div className="px-3 py-1 text-[10px] font-mono uppercase tracking-wider text-white/40 font-semibold">
+          Fleet Navigation
         </div>
 
         {navItems.map((item) => {
@@ -37,21 +37,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               key={item.id}
               onClick={() => onSelectView(item.id)}
-              className={`flex items-center justify-between px-3 py-2 rounded text-sm transition-colors ${
+              className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs transition-all ${
                 isActive
-                  ? 'bg-surface-container-high text-primary font-medium border-l-2 border-primary'
-                  : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
+                  ? 'bg-primary/15 text-primary font-semibold shadow-sm border border-primary/25'
+                  : 'text-white/60 hover:text-white hover:bg-white/[0.05]'
               }`}
             >
-              <div className="flex items-center gap-2.5">
-                <span className={`material-symbols-outlined text-[18px] ${isActive ? 'text-primary' : 'text-outline'}`}>
+              <div className="flex items-center gap-3">
+                <span className={`material-symbols-outlined text-[19px] ${isActive ? 'text-primary' : 'text-white/40'}`}>
                   {item.icon}
                 </span>
-                <span>{item.label}</span>
+                <span className="tracking-tight">{item.label}</span>
               </div>
 
               {item.badge !== undefined && item.badge > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold bg-tertiary-container/40 text-tertiary border border-tertiary/40">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30">
                   {item.badge}
                 </span>
               )}
@@ -61,33 +61,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Bottom Workstation & Sandbox Hardware Status Card */}
-      <div className="px-3 pt-3 border-t border-outline-variant/20 flex flex-col gap-2 font-mono text-[11px]">
-        <div className="p-2 rounded bg-surface-container-lowest border border-outline-variant/20 flex flex-col gap-1.5">
-          <div className="flex items-center justify-between text-outline text-[10px] uppercase">
+      <div className="px-3 pt-3 border-t border-white/[0.06] flex flex-col gap-2.5 font-mono text-[11px]">
+        <div className="p-3 rounded-xl bg-black/40 border border-white/[0.06] flex flex-col gap-2 shadow-inner">
+          <div className="flex items-center justify-between text-white/40 text-[10px] uppercase font-semibold">
             <span>Workstation Node</span>
-            <span className="flex items-center gap-1 text-primary">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+            <span className="flex items-center gap-1.5 text-emerald-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               ONLINE
             </span>
           </div>
 
-          <div className="text-on-surface font-semibold truncate text-[11px]">
+          <div className="text-white font-semibold truncate text-[11px]">
             HP Omen 16 // RTX-5060
           </div>
 
-          <div className="flex items-center justify-between text-outline text-[10px]">
+          <div className="flex items-center justify-between text-white/40 text-[10px]">
             <span>Docker Engine:</span>
-            <span className="text-on-surface-variant">Sandboxed</span>
+            <span className="text-white/80 font-medium">Sandboxed</span>
           </div>
 
-          <div className="flex items-center justify-between text-outline text-[10px]">
+          <div className="flex items-center justify-between text-white/40 text-[10px]">
             <span>Database:</span>
-            <span className="text-primary">Firestore</span>
+            <span className="text-primary font-medium">Firestore</span>
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 text-outline text-[10px] px-1">
-          <span className="material-symbols-outlined text-[13px] text-primary">verified_user</span>
+        <div className="flex items-center gap-2 text-white/40 text-[10px] px-1">
+          <span className="material-symbols-outlined text-[14px] text-emerald-400">verified_user</span>
           <span>Zero-Trust Policy Active</span>
         </div>
       </div>

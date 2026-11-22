@@ -37,43 +37,51 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
   const activeAgentsCount = agents.filter((a) => a.status === 'running' || a.status === 'active').length || 3;
 
   return (
-    <div className="flex-1 h-[calc(100vh-2.5rem)] overflow-y-auto bg-surface-container-lowest p-5 flex flex-col gap-5 font-sans">
+    <div className="flex-1 h-[calc(100vh-2.5rem)] overflow-y-auto bg-[#0a0c10] p-6 flex flex-col gap-6 font-sans">
       {/* Top Telemetry & Health Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-lg bg-surface-container-low border border-outline-variant/30">
-        <div className="flex items-center gap-3">
-          <div className="w-2.5 h-2.5 rounded-full bg-primary animate-pulse" />
+      <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-[#12151b] border border-white/[0.08] shadow-md backdrop-blur-sm">
+        <div className="flex items-center gap-3.5">
+          <div className="relative flex h-3 w-3 shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500" />
+          </div>
           <div>
-            <h2 className="text-base font-semibold text-on-surface">
-              {currentProject?.name || 'College Canteen App'}
-            </h2>
-            <p className="text-xs text-outline font-mono">
-              Branch: <span className="text-primary">{activeTask.feature_branch || 'main'}</span> · Workstation: OMEN-16 (RTX-5060)
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-semibold text-white tracking-tight">
+                {currentProject?.name || 'College Canteen App'}
+              </h2>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                ACTIVE
+              </span>
+            </div>
+            <p className="text-xs text-white/50 font-mono mt-0.5">
+              Branch: <span className="text-primary font-medium">{activeTask.feature_branch || 'main'}</span> · Workstation: OMEN-16 (RTX-5060)
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-6 text-xs font-mono">
-          <div>
-            <div className="flex items-center justify-between gap-2 text-outline text-[11px]">
-              <span>DAILY API BUDGET</span>
-              <span className="text-on-surface font-bold">${dailySpend.toFixed(2)} / $50.00</span>
+          <div className="bg-white/[0.03] px-3.5 py-2 rounded-xl border border-white/[0.06]">
+            <div className="flex items-center justify-between gap-3 text-white/50 text-[10px] uppercase font-semibold">
+              <span>Daily API Budget</span>
+              <span className="text-white font-bold">${dailySpend.toFixed(2)} / $50.00</span>
             </div>
-            <div className="w-40 h-1.5 bg-surface-container-highest rounded-full overflow-hidden mt-1">
+            <div className="w-36 h-1.5 bg-white/10 rounded-full overflow-hidden mt-1.5">
               <div
-                className="h-full bg-primary"
+                className="h-full bg-gradient-to-r from-blue-400 to-indigo-400 rounded-full transition-all duration-500"
                 style={{ width: `${Math.min(100, (dailySpend / 50.0) * 100)}%` }}
               />
             </div>
           </div>
 
           <div className="hidden sm:flex flex-col text-right">
-            <span className="text-outline text-[10px] uppercase">Session Uptime</span>
-            <span className="text-on-surface font-medium">{sessionUptime}</span>
+            <span className="text-white/40 text-[10px] uppercase font-semibold">Session Uptime</span>
+            <span className="text-white font-medium">{sessionUptime}</span>
           </div>
 
           <button
             onClick={onTriggerPlanModal}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-primary text-on-primary font-medium text-xs hover:bg-primary-container transition-colors shadow-sm"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-on-primary font-semibold text-xs hover:bg-primary-container transition-all shadow-md active:scale-95"
           >
             <span className="material-symbols-outlined text-[15px]">auto_awesome</span>
             <span>Plan Milestone</span>
@@ -84,101 +92,105 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
       {/* 4-Card Fleet Status Strip */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: Active Task */}
-        <div className="p-4 rounded-lg bg-surface-container-low border border-outline-variant/20 flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-mono uppercase text-outline">Active Task</span>
-            <span className="px-1.5 py-0.5 rounded bg-primary/20 text-primary font-mono text-[10px] font-semibold flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" /> RUNNING
+        <div className="p-4 rounded-2xl bg-[#12151b] border border-white/[0.08] shadow-sm flex flex-col justify-between hover:border-white/20 transition-colors">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-white/40 font-semibold">Active Task</span>
+            <span className="px-2 py-0.5 rounded-full bg-emerald-400/10 text-emerald-400 font-mono text-[10px] font-semibold flex items-center gap-1.5 border border-emerald-400/20">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> RUNNING
             </span>
           </div>
           <div>
-            <h4 className="text-sm font-semibold text-on-surface truncate">{activeTask.title}</h4>
-            <p className="text-xs text-outline font-mono mt-1 truncate">{activeTask.feature_branch || 'feat/active'}</p>
+            <h4 className="text-sm font-semibold text-white/95 truncate">{activeTask.title}</h4>
+            <p className="text-xs text-white/40 font-mono mt-1 truncate">{activeTask.feature_branch || 'feat/active'}</p>
           </div>
-          <div className="mt-3 pt-2 border-t border-outline-variant/20 flex items-center justify-between text-xs font-mono text-outline">
+          <div className="mt-3 pt-2.5 border-t border-white/[0.06] flex items-center justify-between text-xs font-mono text-white/40">
             <span>Docker Runner</span>
-            <span className="text-primary">68% Done</span>
+            <span className="text-primary font-medium">68% Done</span>
           </div>
         </div>
 
         {/* Card 2: Active Agents */}
-        <div className="p-4 rounded-lg bg-surface-container-low border border-outline-variant/20 flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-mono uppercase text-outline">Agent Fleet</span>
-            <span className="text-xs font-mono font-bold text-on-surface">6 Configured</span>
+        <div className="p-4 rounded-2xl bg-[#12151b] border border-white/[0.08] shadow-sm flex flex-col justify-between hover:border-white/20 transition-colors">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-white/40 font-semibold">Agent Fleet</span>
+            <span className="text-xs font-mono font-bold text-white/90">6 Configured</span>
           </div>
-          <div className="flex flex-wrap gap-1">
-            <span className="px-1.5 py-0.5 rounded bg-primary/20 text-primary text-[10px] font-mono">SWE: Active</span>
-            <span className="px-1.5 py-0.5 rounded bg-primary/20 text-primary text-[10px] font-mono">QA: Active</span>
-            <span className="px-1.5 py-0.5 rounded bg-surface-container-high text-outline text-[10px] font-mono">Sec: Idle</span>
-            <span className="px-1.5 py-0.5 rounded bg-surface-container-high text-outline text-[10px] font-mono">DevOps: Idle</span>
+          <div className="flex flex-wrap gap-1.5">
+            <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-[10px] font-mono font-medium border border-primary/20">SWE: Active</span>
+            <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-[10px] font-mono font-medium border border-primary/20">QA: Active</span>
+            <span className="px-2 py-0.5 rounded-md bg-white/[0.04] text-white/40 text-[10px] font-mono">Sec: Idle</span>
+            <span className="px-2 py-0.5 rounded-md bg-white/[0.04] text-white/40 text-[10px] font-mono">DevOps: Idle</span>
           </div>
-          <div className="mt-3 pt-2 border-t border-outline-variant/20 flex items-center justify-between text-xs font-mono text-outline">
-            <span>Assigned Threads: 12</span>
-            <span className="text-on-surface">RTX-5060</span>
+          <div className="mt-3 pt-2.5 border-t border-white/[0.06] flex items-center justify-between text-xs font-mono text-white/40">
+            <span>Threads: 12</span>
+            <span className="text-white/80">RTX-5060</span>
           </div>
         </div>
 
         {/* Card 3: Blocked Tasks */}
-        <div className="p-4 rounded-lg bg-surface-container-low border border-outline-variant/20 flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-mono uppercase text-outline">Blocked Tasks</span>
-            <span className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-bold ${
-              blockedTasks.length > 0 ? 'bg-tertiary-container/30 text-tertiary' : 'bg-surface-container text-outline'
+        <div className="p-4 rounded-2xl bg-[#12151b] border border-white/[0.08] shadow-sm flex flex-col justify-between hover:border-white/20 transition-colors">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-white/40 font-semibold">Blocked Tasks</span>
+            <span className={`px-2 py-0.5 rounded-full font-mono text-[10px] font-bold ${
+              blockedTasks.length > 0
+                ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                : 'bg-white/[0.04] text-white/40'
             }`}>
               {blockedTasks.length} BLOCKED
             </span>
           </div>
           <div>
-            <h4 className="text-sm font-medium text-on-surface truncate">
+            <h4 className="text-sm font-semibold text-white/95 truncate">
               {blockedTasks[0]?.title || 'Zero active pipeline blockers'}
             </h4>
-            <p className="text-xs text-outline mt-1 font-mono">
+            <p className="text-xs text-white/40 mt-1 font-mono">
               {blockedTasks.length > 0 ? 'Max retry limit reached' : 'Clean test execution pass'}
             </p>
           </div>
-          <div className="mt-3 pt-2 border-t border-outline-variant/20 flex items-center justify-between text-xs font-mono text-outline">
+          <div className="mt-3 pt-2.5 border-t border-white/[0.06] flex items-center justify-between text-xs font-mono text-white/40">
             <span>QA Pass Rate</span>
-            <span className="text-on-surface">96.4%</span>
+            <span className="text-white/80 font-medium">96.4%</span>
           </div>
         </div>
 
         {/* Card 4: Pending Approvals */}
-        <div className="p-4 rounded-lg bg-surface-container-low border border-outline-variant/20 flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-mono uppercase text-outline">Human Control</span>
-            <span className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-bold ${
-              pendingApprovals.length > 0 ? 'bg-error-container/30 text-error animate-pulse' : 'bg-surface-container text-outline'
+        <div className="p-4 rounded-2xl bg-[#12151b] border border-white/[0.08] shadow-sm flex flex-col justify-between hover:border-white/20 transition-colors">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-white/40 font-semibold">Human Control</span>
+            <span className={`px-2 py-0.5 rounded-full font-mono text-[10px] font-bold ${
+              pendingApprovals.length > 0
+                ? 'bg-amber-400/20 text-amber-300 border border-amber-400/30 animate-pulse'
+                : 'bg-white/[0.04] text-white/40'
             }`}>
               {pendingApprovals.length} PENDING
             </span>
           </div>
           <div>
-            <h4 className="text-sm font-medium text-on-surface truncate">
+            <h4 className="text-sm font-semibold text-white/95 truncate">
               {pendingApprovals[0]?.action || 'No operations awaiting authorization'}
             </h4>
-            <p className="text-xs text-outline mt-1 font-mono">
-              Risk Level: <span className="text-error font-bold">{pendingApprovals[0]?.risk_level?.toUpperCase() || 'NONE'}</span>
+            <p className="text-xs text-white/40 mt-1 font-mono">
+              Risk Level: <span className="text-amber-400 font-bold">{pendingApprovals[0]?.risk_level?.toUpperCase() || 'NONE'}</span>
             </p>
           </div>
-          <div className="mt-3 pt-2 border-t border-outline-variant/20 flex items-center justify-between text-xs font-mono text-outline">
+          <div className="mt-3 pt-2.5 border-t border-white/[0.06] flex items-center justify-between text-xs font-mono text-white/40">
             <span>Zero-Trust Gate</span>
-            <span className="text-primary">Enforced</span>
+            <span className="text-emerald-400 font-medium">Enforced</span>
           </div>
         </div>
       </div>
 
       {/* Hardware Telemetry Halftone Canvas */}
-      <div className="p-4 rounded-lg bg-surface-container-low border border-outline-variant/20 flex flex-col gap-2">
+      <div className="p-4 rounded-2xl bg-[#12151b] border border-white/[0.08] shadow-sm flex flex-col gap-2.5">
         <div className="flex items-center justify-between text-xs font-mono">
-          <div className="flex items-center gap-2 text-on-surface font-semibold">
+          <div className="flex items-center gap-2 text-white font-semibold">
             <span className="material-symbols-outlined text-[16px] text-primary">memory</span>
             <span>WORKSTATION CLUSTER & DOCKER RUNNER TELEMETRY</span>
           </div>
-          <span className="text-[11px] text-outline">Hover dots to inspect hardware architecture</span>
+          <span className="text-[11px] text-white/40">Hover dots to inspect hardware architecture</span>
         </div>
 
-        <div className="relative w-full h-44 rounded bg-surface-container-lowest overflow-hidden border border-outline-variant/20">
+        <div className="relative w-full h-44 rounded-xl bg-black/40 overflow-hidden border border-white/[0.06]">
           <HalftoneReveal
             src="https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?q=80&w=1400&auto=format&fit=crop"
             mode="duotone"
@@ -193,7 +205,7 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
             wander={true}
             clickBurst={true}
           />
-          <div className="absolute bottom-2 left-3 pointer-events-none text-[11px] font-mono text-on-surface/80 bg-surface-container-lowest/80 px-2 py-0.5 rounded border border-outline-variant/30 backdrop-blur-sm">
+          <div className="absolute bottom-2 left-3 pointer-events-none text-[11px] font-mono text-white/80 bg-black/70 px-2.5 py-1 rounded-lg border border-white/10 backdrop-blur-md">
             NODE: HP OMEN 16 // NVIDIA RTX 5060 (8GB VRAM) // 16 CORES // DOCKER DAEMON SANDBOXED
           </div>
         </div>
@@ -202,30 +214,30 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
       {/* Split Execution View: Terminal Logs & Pending Action Approval */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Left 2 Cols: Real-time Terminal Log Feed */}
-        <div className="lg:col-span-2 p-4 rounded-lg bg-surface-container-low border border-outline-variant/20 flex flex-col gap-3">
-          <div className="flex items-center justify-between border-b border-outline-variant/20 pb-2">
-            <div className="flex items-center gap-2 text-xs font-mono text-on-surface">
+        <div className="lg:col-span-2 p-4 rounded-2xl bg-[#12151b] border border-white/[0.08] shadow-sm flex flex-col gap-3">
+          <div className="flex items-center justify-between border-b border-white/[0.06] pb-2.5">
+            <div className="flex items-center gap-2 text-xs font-mono text-white">
               <span className="material-symbols-outlined text-[16px] text-primary">terminal</span>
               <span className="font-semibold">CONTAINER TERMINAL & TEST RUNNER FEED</span>
             </div>
-            <span className="text-[10px] font-mono text-outline">AUTO-STREAMING // FIRESTORE SYNC</span>
+            <span className="text-[10px] font-mono text-white/40">AUTO-STREAMING // FIRESTORE SYNC</span>
           </div>
 
-          <div className="h-64 overflow-y-auto font-mono text-xs text-on-surface-variant flex flex-col gap-1.5 p-3 rounded bg-surface-container-lowest border border-outline-variant/20">
+          <div className="h-64 overflow-y-auto font-mono text-xs text-white/70 flex flex-col gap-1.5 p-3.5 rounded-xl bg-black/40 border border-white/[0.06]">
             {executionLogs.length === 0 ? (
-              <div className="text-outline italic">Waiting for incoming agent tool executions...</div>
+              <div className="text-white/40 italic">Waiting for incoming agent tool executions...</div>
             ) : (
               executionLogs.map((log) => (
                 <div key={log.id} className="flex items-start gap-2 leading-relaxed">
-                  <span className="text-outline text-[10px] shrink-0 mt-0.5">{log.created_at?.slice(11, 19)}</span>
-                  <span className={`px-1 py-0.2 rounded text-[10px] uppercase font-bold shrink-0 ${
-                    log.level === 'warn' ? 'bg-tertiary-container/30 text-tertiary' :
-                    log.level === 'error' ? 'bg-error-container/30 text-error' :
-                    'bg-surface-container text-primary'
+                  <span className="text-white/40 text-[10px] shrink-0 mt-0.5">{log.created_at?.slice(11, 19)}</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] uppercase font-bold shrink-0 ${
+                    log.level === 'warn' ? 'bg-amber-500/20 text-amber-300' :
+                    log.level === 'error' ? 'bg-red-500/20 text-red-300' :
+                    'bg-white/[0.06] text-primary'
                   }`}>
                     {log.agent_id}
                   </span>
-                  <span className="text-on-surface">{log.message}</span>
+                  <span className="text-white/90">{log.message}</span>
                 </div>
               ))
             )}
@@ -233,54 +245,54 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
         </div>
 
         {/* Right 1 Col: Pending Approval Card */}
-        <div className="p-4 rounded-lg bg-surface-container-low border border-outline-variant/20 flex flex-col justify-between gap-3">
-          <div className="flex items-center justify-between border-b border-outline-variant/20 pb-2">
-            <div className="flex items-center gap-1.5 text-xs font-mono text-error font-semibold">
+        <div className="p-4 rounded-2xl bg-[#12151b] border border-white/[0.08] shadow-sm flex flex-col justify-between gap-3">
+          <div className="flex items-center justify-between border-b border-white/[0.06] pb-2.5">
+            <div className="flex items-center gap-1.5 text-xs font-mono text-amber-400 font-semibold">
               <span className="material-symbols-outlined text-[16px]">gavel</span>
               <span>PENDING AUTHORIZATION</span>
             </div>
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-error-container/30 text-error font-bold">
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-400/10 text-amber-400 font-bold border border-amber-400/20">
               ZERO-TRUST GATE
             </span>
           </div>
 
           {pendingApprovals.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-outline text-xs">
-              <span className="material-symbols-outlined text-[32px] text-primary/40 mb-2">verified_user</span>
-              <p>No high-risk operations awaiting human sign-off.</p>
-              <p className="text-[10px] mt-1">Autonomous fleet is operating within pre-approved guardrails.</p>
+            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-white/40 text-xs">
+              <span className="material-symbols-outlined text-[36px] text-primary/30 mb-2">verified_user</span>
+              <p className="font-medium text-white/60">No operations awaiting human sign-off.</p>
+              <p className="text-[10px] mt-1 text-white/40">Autonomous fleet is operating within pre-approved guardrails.</p>
             </div>
           ) : (
             <div className="flex flex-col gap-3">
               <div>
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-error-container/40 text-error">
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
                   {pendingApprovals[0].risk_level.toUpperCase()} RISK
                 </span>
-                <h4 className="text-sm font-semibold text-on-surface mt-1.5">
+                <h4 className="text-sm font-semibold text-white mt-2">
                   {pendingApprovals[0].action}
                 </h4>
-                <p className="text-xs text-on-surface-variant mt-1 leading-relaxed">
+                <p className="text-xs text-white/60 mt-1 leading-relaxed">
                   {pendingApprovals[0].rationale}
                 </p>
               </div>
 
-              <div className="p-2.5 rounded bg-surface-container font-mono text-[11px] text-outline flex flex-col gap-1">
+              <div className="p-3 rounded-xl bg-black/40 border border-white/[0.06] font-mono text-[11px] text-white/50 flex flex-col gap-1">
                 <div className="flex items-start justify-between gap-2">
                   <span>Rollback Plan:</span>
-                  <span className="text-on-surface text-right">{pendingApprovals[0].rollback_plan}</span>
+                  <span className="text-white/80 text-right">{pendingApprovals[0].rollback_plan}</span>
                 </div>
               </div>
 
               <div className="flex items-center gap-2 pt-2">
                 <button
                   onClick={() => onApproveAction(pendingApprovals[0].id, pendingApprovals[0].approval_token)}
-                  className="flex-1 py-2 px-3 rounded bg-primary text-on-primary font-medium text-xs hover:bg-primary-container transition-colors shadow-sm"
+                  className="flex-1 py-2 px-3 rounded-xl bg-primary text-on-primary font-semibold text-xs hover:bg-primary-container transition-all shadow-md active:scale-95"
                 >
                   Approve (1-Click)
                 </button>
                 <button
                   onClick={() => onDenyAction(pendingApprovals[0].id, pendingApprovals[0].approval_token)}
-                  className="py-2 px-3 rounded bg-surface-container hover:bg-surface-container-high text-outline hover:text-on-surface text-xs transition-colors"
+                  className="py-2 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-white/70 hover:text-white text-xs transition-colors"
                 >
                   Deny
                 </button>

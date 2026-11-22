@@ -439,15 +439,25 @@ async def resize_overlay_route(payload: dict):
     _notch_expanded_event = expanded
     try:
         import ctypes
+        from ctypes import wintypes, c_int, c_void_p
         hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Notch")
         if not hwnd:
             hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Voice Overlay")
         if hwnd:
-            screen_w = ctypes.windll.user32.GetSystemMetrics(0)
-            w = 420 if expanded else 220
-            h = 290 if expanded else 38
-            x = (screen_w - w) // 2
-            ctypes.windll.user32.SetWindowPos(hwnd, -1, x, 0, w, h, 0x0040 | 0x0010)
+            user32 = ctypes.windll.user32
+            user32.SetWindowPos.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int, wintypes.UINT]
+            user32.SetWindowPos.restype = wintypes.BOOL
+            screen_w = user32.GetSystemMetrics(0)
+            # Expanded 580x540 gives generous buffer so bottom dock buttons never clip
+            # Collapsed 280x52 fits sleek Apple pill with soft shadow
+            w = 580 if expanded else 280
+            h = 540 if expanded else 52
+            x = max(0, (screen_w - w) // 2)
+            y = 0
+            HWND_TOPMOST = c_void_p(-1)
+            SWP_SHOWWINDOW = 0x0040
+            SWP_NOACTIVATE = 0x0010
+            user32.SetWindowPos(hwnd, HWND_TOPMOST, x, y, w, h, SWP_SHOWWINDOW | SWP_NOACTIVATE)
     except Exception:
         pass
     return {"status": "ok", "expanded": expanded}

@@ -191,7 +191,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
     }
   }, [pendingApproval?.id]);
 
-  // Keyboard & outside click collapse listener (Escape key or clicking outside)
+  // Keyboard & outside click collapse listener (Escape key)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -200,18 +200,9 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
         setShowVoiceSettings(false);
       }
     };
-    const handleBlur = () => {
-      if (isExpanded) {
-        handleToggleExpand(false);
-        setShowContextMenu(null);
-        setShowVoiceSettings(false);
-      }
-    };
     window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('blur', handleBlur);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('blur', handleBlur);
     };
   }, [isExpanded]);
 
@@ -612,20 +603,17 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
           setShowContextMenu(null);
           if (!isExpanded) handleToggleExpand(true);
         }}
-        onMouseEnter={() => {
-          if (!isExpanded) handleToggleExpand(true);
-        }}
         onContextMenu={handleContextMenu}
         style={{
           width: isExpanded ? '540px' : '260px',
-          height: isExpanded ? '400px' : '36px',
-          borderRadius: isExpanded ? '24px' : '9999px',
+          height: isExpanded ? '460px' : '38px',
+          borderRadius: isExpanded ? '26px' : '9999px',
           background: '#0D0F12',
           border: '1px solid rgba(255, 255, 255, 0.1)',
           boxShadow: isExpanded
             ? '0 24px 60px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.1)'
             : '0 8px 24px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
-          transition: 'all 320ms cubic-bezier(0.22, 1, 0.36, 1)',
+          transition: 'all 320ms cubic-bezier(0.16, 1, 0.3, 1)',
           willChange: 'width, height, border-radius, box-shadow'
         }}
         className={`pointer-events-auto text-white relative flex flex-col overflow-hidden cursor-pointer select-none ${
@@ -804,7 +792,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
               <>
                 <div className="w-full flex-1 flex flex-col items-center justify-center py-2 my-auto">
                   {/* Acoustic Glass Lens */}
-                  <div className="w-28 h-28 relative flex items-center justify-center rounded-full bg-gradient-to-b from-white/[0.05] via-transparent to-black/40 border border-white/[0.08] shadow-[inset_0_1px_2px_rgba(255,255,255,0.12),0_12px_32px_rgba(0,0,0,0.6)] overflow-hidden">
+                  <div className="w-20 h-20 relative flex items-center justify-center rounded-full bg-gradient-to-b from-white/[0.05] via-transparent to-black/40 border border-white/[0.08] shadow-[inset_0_1px_2px_rgba(255,255,255,0.12),0_12px_32px_rgba(0,0,0,0.6)] overflow-hidden">
                     <Strands
                       colors={STRANDS_COLORS}
                       count={3}
@@ -818,7 +806,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
                       taper={1.0}
                       intensity={1.0}
                       saturation={1.0}
-                      scale={1.0}
+                      scale={0.9}
                       glass={true}
                       glassSize={1.0}
                       refraction={1.0}
@@ -835,7 +823,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
                   </div>
 
                   {/* Subtitle / Caption Typography */}
-                  <div className="w-full px-6 pt-3 text-center">
+                  <div className="w-full px-6 pt-2.5 text-center">
                     <p className="text-xs font-medium text-white/90 truncate leading-snug">
                       {captionText}
                     </p>
@@ -843,13 +831,16 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
                 </div>
 
                 {/* ZONE 3: APPLE BOTTOM TACTILE DOCK (3 Perfectly Spaced Buttons) */}
-                <div className="w-full flex items-center justify-center gap-3 pt-2 shrink-0">
+                <div className="w-full flex items-center justify-center gap-3 pt-2 pb-1 shrink-0">
                   {/* Button 1: Mic Mute */}
                   <LiquidButton
                     variant={isMuted ? 'default' : 'primary'}
                     size="default"
                     className="flex-1 max-w-[130px] rounded-full h-10 gap-2 font-medium"
-                    onClick={toggleMute}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleMute();
+                    }}
                     title={isMuted ? 'Unmute microphone' : 'Mute microphone'}
                   >
                     {isMuted ? <MicOff className="w-4 h-4 text-neutral-400" /> : <Mic className="w-4 h-4 text-blue-200" />}
@@ -876,7 +867,10 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
                     variant="dark"
                     size="default"
                     className="flex-1 max-w-[130px] rounded-full h-10 gap-2 font-medium"
-                    onClick={handleEndSession}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEndSession();
+                    }}
                     title="End voice session and collapse"
                   >
                     <PhoneOff className="w-4 h-4 text-red-400" />
@@ -934,7 +928,18 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
                     </div>
                     <select
                       value={selectedVoiceId}
-                      onChange={(e) => setSelectedVoiceId(e.target.value)}
+                      onChange={(e) => {
+                        const newVoice = e.target.value;
+                        setSelectedVoiceId(newVoice);
+                        fetch(`${API_BASE}/api/tts/voice-generator/save`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            voice_id: newVoice,
+                            tone: selectedTone
+                          })
+                        }).catch(() => {});
+                      }}
                       className="w-full bg-neutral-900/90 border border-white/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-primary font-medium"
                     >
                       {voiceList.map((v) => (

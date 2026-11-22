@@ -84,10 +84,36 @@ class NotchApi:
 
 
 
+def get_persisted_voice_id() -> str:
+    """Reads user-selected voice from data/tts_settings.json across app directories."""
+    candidates = []
+    if getattr(sys, 'frozen', False):
+        exe_dir = os.path.dirname(sys.executable)
+        candidates.append(os.path.join(exe_dir, "data", "tts_settings.json"))
+        candidates.append(os.path.join(BUNDLE_DIR, "data", "tts_settings.json"))
+    candidates.append(os.path.join(os.getcwd(), "data", "tts_settings.json"))
+    candidates.append(os.path.join(os.path.dirname(__file__), "data", "tts_settings.json"))
+    candidates.append(os.path.join(os.path.dirname(__file__), "apps", "api", "data", "tts_settings.json"))
+
+    for path in candidates:
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+                    voice = cfg.get("active_voice_id")
+                    if voice:
+                        log_debug(f"Loaded persisted startup voice: {voice} from {path}")
+                        return voice
+            except Exception:
+                pass
+    return "en-GB-RyanNeural"
+
+
 def speak_system_online():
-    """Vocalizes 'System online, Sir.' via Windows SAPI / Edge-TTS."""
+    """Vocalizes 'System online, Sir.' via Windows SAPI / Edge-TTS using persisted voice."""
     def _speak():
         try:
+            persisted_voice = get_persisted_voice_id()
             try:
                 import edge_tts
                 import asyncio
@@ -95,7 +121,7 @@ def speak_system_online():
                 import winsound
 
                 async def _edge_synth():
-                    comm = edge_tts.Communicate("System online, Sir.", voice="en-GB-RyanNeural")
+                    comm = edge_tts.Communicate("System online, Sir.", voice=persisted_voice)
                     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as fp:
                         temp_path = fp.name
                     await comm.save(temp_path)
@@ -105,7 +131,7 @@ def speak_system_online():
                 asyncio.set_event_loop(loop)
                 wav_file = loop.run_until_complete(_edge_synth())
                 winsound.PlaySound(wav_file, winsound.SND_FILENAME | winsound.SND_ASYNC)
-                log_debug("Spoke 'System online, Sir.' via Edge-TTS successfully.")
+                log_debug(f"Spoke 'System online, Sir.' with voice '{persisted_voice}' successfully.")
                 return
             except Exception as edge_err:
                 log_debug(f"Edge-TTS startup notice: {edge_err}; using SAPI fallback.")
@@ -250,9 +276,9 @@ def set_notch_geometry(expanded: bool):
             user32.SetWindowPos.restype = wintypes.BOOL
 
             screen_w, _ = get_screen_metrics()
-            # 560x440 expanded, 280x52 collapsed gives 10-12px transparent breathing margin around the island
-            w = 560 if expanded else 280
-            h = 440 if expanded else 52
+            # 580x540 expanded, 280x52 collapsed gives 20-30px transparent breathing margin around the island
+            w = 580 if expanded else 280
+            h = 540 if expanded else 52
             x = max(0, (screen_w - w) // 2)
             y = 0
 
