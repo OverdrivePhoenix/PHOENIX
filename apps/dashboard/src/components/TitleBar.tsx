@@ -62,18 +62,21 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         </div>
       </div>
 
-      {/* Center: Morphing Desktop Top-Notch Dynamic Island */}
-      <div className="absolute left-1/2 -translate-x-1/2 top-0 pt-0.5 titlebar-no-drag z-50 overflow-visible">
-        <DynamicIsland
-          activeAgent={activeAgent}
-          pendingApproval={pendingApproval}
-          dailySpend={dailySpend}
-          isEmergencyPaused={isEmergencyPaused}
-          onApproveAction={onApproveAction}
-          onDenyAction={onDenyAction}
-          onOpenVoice={onOpenLiveVoice || onOpenJarvisModal}
-          onOpenFullApp={onOpenDynamicIslandSuite}
-        />
+      {/* Center: Compact Status Badge & Top Notch Summon */}
+      <div className="absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 titlebar-no-drag z-10 flex items-center gap-2">
+        <button
+          onClick={() => {
+            fetch(`${API_BASE}/overlay/toggle`, { method: 'POST' }).catch(() => {});
+          }}
+          className="flex items-center gap-2 px-3 py-1 rounded-full bg-surface-container border border-outline-variant/30 text-[11px] font-mono text-outline hover:text-on-surface hover:border-primary/40 transition-colors"
+          title="Toggle Top-Center Dynamic Notch Overlay"
+        >
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span>{activeAgent}</span>
+          <span className="text-outline-variant">|</span>
+          <span className="text-emerald-400 font-semibold">${dailySpend.toFixed(2)}</span>
+          <span className="material-symbols-outlined text-[13px] text-primary">graphic_eq</span>
+        </button>
       </div>
 
       {/* Right: Emergency Pause & Window Controls */}

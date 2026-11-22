@@ -202,22 +202,35 @@ def configure_voice_overlay_window():
         import ctypes
         hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Voice Overlay")
         if hwnd:
+            GWL_STYLE = -16
             GWL_EXSTYLE = -20
+            WS_CAPTION = 0x00C00000
+            WS_THICKFRAME = 0x00040000
+            WS_BORDER = 0x00800000
+            WS_DLGFRAME = 0x00400000
+            WS_POPUP = 0x80000000
             WS_EX_TOOLWINDOW = 0x00000080
             WS_EX_APPWINDOW = 0x00040000
+            WS_EX_TOPMOST = 0x00000008
+
+            # Strip all native title bar, borders, and window buttons
+            style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
+            style &= ~(WS_CAPTION | WS_THICKFRAME | WS_BORDER | WS_DLGFRAME)
+            style |= WS_POPUP
+            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_STYLE, style)
 
             # Set toolwindow so it skips the Windows taskbar and Alt+Tab
-            style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-            style |= WS_EX_TOOLWINDOW
-            style &= ~WS_EX_APPWINDOW
-            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
+            ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            ex_style |= (WS_EX_TOOLWINDOW | WS_EX_TOPMOST)
+            ex_style &= ~WS_EX_APPWINDOW
+            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style)
 
-            # Anchor at top-center of the screen (flush against top bezel, like camera notch / Dynamic Island)
+            # Anchor flush at top-center of the screen (y = 0)
             user32 = ctypes.windll.user32
             screen_w = user32.GetSystemMetrics(0)
             screen_h = user32.GetSystemMetrics(1)
-            w = 520
-            h = 420
+            w = 480
+            h = 340
             x = max(0, (screen_w - w) // 2)
             y = 0  # Flush with top edge of screen
 
@@ -420,8 +433,8 @@ def main():
     voice_overlay_window = webview.create_window(
         title="PHOENIX Voice Overlay",
         url=overlay_url,
-        width=520,
-        height=420,
+        width=480,
+        height=340,
         frameless=True,
         on_top=True,
         transparent=True,

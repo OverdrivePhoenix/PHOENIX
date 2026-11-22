@@ -273,11 +273,26 @@ export function App() {
   const isStandaloneNotch = window.location.hash === '#dynamic-island' || window.location.pathname === '/island';
   const isVoiceOverlay = window.location.hash === '#voice-overlay' || window.location.pathname === '/voice-overlay' || window.location.pathname === '/overlay';
 
-  if (isVoiceOverlay) {
+  if (isVoiceOverlay || isStandaloneNotch) {
     return (
       <VoiceOverlay
         isStandaloneOverlay={true}
         currentProjectName={currentProject?.name}
+        activeAgent="SWE-03 · Run"
+        pendingApproval={
+          topPendingApproval
+            ? {
+                id: topPendingApproval.id,
+                action: topPendingApproval.action,
+                risk_level: topPendingApproval.risk_level,
+                token: topPendingApproval.approval_token
+              }
+            : null
+        }
+        dailySpend={18.42}
+        isEmergencyPaused={isEmergencyPaused}
+        onApproveAction={handleApproveAction}
+        onDenyAction={handleDenyAction}
         onOpenCommandCenter={() => {
           fetch(`${API_BASE}/tray/restore-window`, { method: 'POST' }).catch(() => {});
         }}
@@ -294,38 +309,6 @@ export function App() {
           return { intent: res.intent, reply: res.spoken_reply };
         }}
       />
-    );
-  }
-
-  if (isStandaloneNotch) {
-    return (
-      <div className="w-screen h-screen bg-transparent flex flex-col items-center justify-start pt-1 overflow-hidden select-none">
-        <DynamicIsland
-          activeAgent="SWE-03 · Run"
-          pendingApproval={
-            topPendingApproval
-              ? {
-                  id: topPendingApproval.id,
-                  action: topPendingApproval.action,
-                  risk_level: topPendingApproval.risk_level,
-                  token: topPendingApproval.approval_token
-                }
-              : null
-          }
-          dailySpend={18.42}
-          sessionUptime={sessionUptime}
-          isEmergencyPaused={isEmergencyPaused}
-          onApproveAction={handleApproveAction}
-          onDenyAction={handleDenyAction}
-          onOpenVoice={() => {
-            fetch(`${API_BASE}/tray/open-voice`, { method: 'POST' }).catch(() => {});
-          }}
-          onOpenFullApp={() => {
-            fetch(`${API_BASE}/tray/restore-window`, { method: 'POST' }).catch(() => {});
-          }}
-          standalone={true}
-        />
-      </div>
     );
   }
 
