@@ -13,13 +13,19 @@ datas_list = [
     ('apps/api/app', 'app')
 ]
 
+# Explicitly bundle all prompt assets and markdown files from agents package
+site_packages = os.path.abspath('apps/api/.venv/Lib/site-packages')
+agents_pkg_dir = os.path.join(site_packages, 'agents')
+if os.path.exists(agents_pkg_dir):
+    datas_list.append((agents_pkg_dir, 'agents'))
+
 for pkg in ['agents', 'mcp', 'edge_tts']:
     try:
         datas_list += collect_data_files(pkg)
     except Exception:
         pass
 
-for pkg in ['mcp', 'openai-agents', 'edge-tts']:
+for pkg in ['mcp', 'openai-agents', 'edge-tts', 'pydantic', 'fastapi']:
     try:
         datas_list += copy_metadata(pkg)
     except Exception:
@@ -60,7 +66,10 @@ a = Analysis(
         'httpx',
         'app.tts',
         'app.tts.adapter',
-        'app.agents.jarvis'
+        'app.agents.jarvis',
+        'app.agents.planner',
+        'agents',
+        'mcp'
     ],
     hookspath=[],
     hooksconfig={},

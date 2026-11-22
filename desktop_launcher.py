@@ -1,5 +1,6 @@
 import os
 import sys
+import io
 import time
 import socket
 import urllib.request
@@ -7,8 +8,32 @@ import threading
 import logging
 import traceback
 
+# In PyInstaller windowed mode (console=False), sys.stdout and sys.stderr are None.
+# Libraries like uvicorn call sys.stdout.isatty(), which raises AttributeError.
+class DummyStream:
+    def write(self, data):
+        pass
+    def flush(self):
+        pass
+    def isatty(self):
+        return False
+
+if sys.stdout is None:
+    sys.stdout = DummyStream()
+if sys.stderr is None:
+    sys.stderr = DummyStream()
+if sys.stdin is None:
+    sys.stdin = io.StringIO()
+
+if getattr(sys, 'frozen', False):
+    APP_DIR = os.path.dirname(sys.executable)
+    BUNDLE_DIR = sys._MEIPASS
+else:
+    APP_DIR = os.path.dirname(os.path.abspath(__file__))
+    BUNDLE_DIR = APP_DIR
+
 # Setup logging
-LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "phoenix_runtime.log")
+LOG_FILE = os.path.join(APP_DIR, "phoenix_runtime.log")
 logging.basicConfig(
     filename=LOG_FILE,
     level=logging.INFO,
@@ -20,13 +45,6 @@ def log_debug(msg: str):
         logging.info(msg)
     except Exception:
         pass
-
-if getattr(sys, 'frozen', False):
-    BUNDLE_DIR = sys._MEIPASS
-    APP_DIR = os.path.dirname(sys.executable)
-else:
-    BUNDLE_DIR = os.path.dirname(os.path.abspath(__file__))
-    APP_DIR = BUNDLE_DIR
 
 # Ensure app package is in sys.path
 api_app_dir = os.path.join(BUNDLE_DIR, "app")
@@ -148,7 +166,8 @@ def start_control_plane_server(port: int = 8000):
             host="127.0.0.1",
             port=port,
             log_level="warning",
-            access_log=False
+            access_log=False,
+            log_config=None
         )
         control_server = uvicorn.Server(config)
         control_server.run()
@@ -175,7 +194,8 @@ def start_local_node_server(port: int = 8001):
                     host="127.0.0.1",
                     port=port,
                     log_level="warning",
-                    access_log=False
+                    access_log=False,
+                    log_config=None
                 )
                 local_server = uvicorn.Server(config)
                 local_server.run()
@@ -386,7 +406,23 @@ def on_window_ready(window):
             ctypes.windll.user32.SetForegroundWindow(hwnd)
     except Exception:
         pass
-    configure_voice_overlay_window(expanded=False)
+
+    def _ensure_overlay():
+        for _ in range(25):
+            time.sleep(0.15)
+            try:
+                import ctypes
+                hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Notch")
+                if not hwnd:
+                    hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Voice Overlay")
+                if hwnd:
+                    configure_voice_overlay_window(expanded=False)
+                    log_debug(f"Configured overlay HWND={hwnd} flush at top-center.")
+                    break
+            except Exception:
+                pass
+
+    threading.Thread(target=_ensure_overlay, daemon=True).start()
 
 
 def main():
@@ -396,12 +432,18 @@ def main():
     # 1. Immediately vocalize activation: "System online, Sir."
     speak_system_online()
 
-    # 2. Start Control Plane (FastAPI + React Dashboard) if port 8000 is free
-    if not is_port_in_use(8000):
+    # 2. Start Control Plane (FastAPI + React Dashboard)
+    need_start_8000 = True
+    if is_port_in_use(8000):
+        if wait_for_server("http://127.0.0.1:8000/health", timeout=1.5):
+            log_debug("Port 8000 is already active and healthy; reusing existing server.")
+            need_start_8000 = False
+        else:
+            log_debug("Port 8000 reported in use but not responding to /health; starting control plane server...")
+
+    if need_start_8000:
         t1 = threading.Thread(target=start_control_plane_server, args=(8000,), daemon=True)
         t1.start()
-    else:
-        log_debug("Port 8000 is already in use; reusing existing server.")
 
     # 3. Start Local Node Daemon bridge if port 8001 is free
     if not is_port_in_use(8001):
@@ -409,10 +451,10 @@ def main():
         t2.start()
 
     # 4. Wait for Control Plane health endpoint
-    server_ready = wait_for_server("http://127.0.0.1:8000/health", timeout=12.0)
+    server_ready = wait_for_server("http://127.0.0.1:8000/health", timeout=20.0)
     log_debug(f"Server ready status: {server_ready}")
-    target_url = "http://127.0.0.1:8000" if server_ready else "http://localhost:5173"
-    overlay_url = "http://127.0.0.1:8000/#voice-overlay" if server_ready else "http://localhost:5173/#voice-overlay"
+    target_url = "http://127.0.0.1:8000"
+    overlay_url = "http://127.0.0.1:8000/#voice-overlay"
 
     # 5. Compute primary screen top-center position for the notch pill
     import ctypes
