@@ -279,7 +279,7 @@ export function App() {
         <VoiceOverlay
           isStandaloneOverlay={true}
           currentProjectName={currentProject?.name}
-          activeAgent="SWE-03 · Run"
+          activeAgent="PHOENIX · SWE-03"
           pendingApproval={
             topPendingApproval
               ? {

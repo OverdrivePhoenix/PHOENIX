@@ -168,7 +168,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
     }
   }, [pendingApproval?.id]);
 
-  // Keyboard shortcut listener: Escape collapses the island back to pill
+  // Keyboard & outside click collapse listener (Escape key or clicking outside)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -177,9 +177,20 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
         setShowVoiceSettings(false);
       }
     };
+    const handleBlur = () => {
+      if (isExpanded) {
+        handleToggleExpand(false);
+        setShowContextMenu(null);
+        setShowVoiceSettings(false);
+      }
+    };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+    window.addEventListener('blur', handleBlur);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('blur', handleBlur);
+    };
+  }, [isExpanded]);
 
   // Initialize Microphone & Web Audio Analyser
   useEffect(() => {
@@ -583,13 +594,13 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
         style={{
           backgroundColor: '#000000',
           boxShadow: isExpanded
-            ? '0 25px 60px -10px rgba(0,0,0,0.95), inset 0 1px 0 rgba(255,255,255,0.14)'
-            : '0 10px 25px -5px rgba(0,0,0,0.85), inset 0 1px 0 rgba(255,255,255,0.1)'
+            ? '0 20px 48px rgba(0,0,0,0.92), 0 0 0 1px rgba(255,255,255,0.08)'
+            : '0 6px 16px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.08)'
         }}
-        className={`w-full h-full text-white border-b border-x border-white/[0.12] relative flex flex-col overflow-hidden cursor-pointer backdrop-blur-3xl transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+        className={`w-full h-full text-white relative flex flex-col overflow-hidden cursor-pointer backdrop-blur-3xl transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
           isExpanded
-            ? 'rounded-b-[36px] rounded-t-none px-6 pt-3.5 pb-5'
-            : 'rounded-b-[22px] rounded-t-none px-3.5 py-1.5 flex-row items-center justify-between'
+            ? 'rounded-b-[28px] rounded-t-none px-6 pt-3.5 pb-5'
+            : 'rounded-b-[20px] rounded-t-none px-1 py-0 flex-row items-center justify-between'
         }`}
       >
         {/* Subtle interior ambient edge highlight */}
@@ -597,10 +608,10 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
 
         {/* ================= 1. COLLAPSED STATE: SLEEK APPLE PILL ================= */}
         {!isExpanded && (
-          <div className="w-full h-full flex items-center justify-between z-10">
+          <div className="w-full h-full flex items-center justify-between px-3.5 z-10 select-none whitespace-nowrap">
             {/* Leading accessory: Glowing Indicator + Agent Badge */}
-            <div className="flex items-center space-x-2.5">
-              <span className="relative flex h-2.5 w-2.5">
+            <div className="flex items-center space-x-2.5 min-w-0">
+              <span className="relative flex h-2.5 w-2.5 shrink-0">
                 <span
                   className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
                     pendingApproval
@@ -628,13 +639,13 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
                   }`}
                 />
               </span>
-              <span className="text-[12px] font-mono font-semibold tracking-tight text-white/95">
-                {pendingApproval ? 'GATE REQ' : isEmergencyPaused ? 'PAUSED' : activeAgent}
+              <span className="text-[12px] font-mono font-medium tracking-wide text-white/95 whitespace-nowrap truncate">
+                {pendingApproval ? 'GATE REQ' : isEmergencyPaused ? 'PAUSED' : (activeAgent || 'PHOENIX · SWE-03')}
               </span>
             </div>
 
             {/* Trailing accessory: Mini <Strands/> Audio Orb */}
-            <div className="flex items-center space-x-2 shrink-0">
+            <div className="flex items-center space-x-2 shrink-0 ml-2">
               <div className="w-6 h-6 relative rounded-full overflow-hidden flex items-center justify-center bg-white/[0.06] border border-white/10 shadow-inner">
                 <Strands
                   colors={STRANDS_COLORS}

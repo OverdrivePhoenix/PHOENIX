@@ -240,18 +240,25 @@ def set_notch_geometry(expanded: bool):
     """Dynamically resizes and centers the native notch overlay window at y = 0."""
     try:
         import ctypes
+        from ctypes import wintypes, c_int, c_void_p
         hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Notch")
         if not hwnd:
             hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Voice Overlay")
         if hwnd:
             user32 = ctypes.windll.user32
+            user32.SetWindowPos.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int, wintypes.UINT]
+            user32.SetWindowPos.restype = wintypes.BOOL
+
             screen_w, _ = get_screen_metrics()
-            w = 480 if expanded else 230
-            h = 390 if expanded else 38
+            w = 480 if expanded else 280
+            h = 400 if expanded else 38
             x = max(0, (screen_w - w) // 2)
             y = 0
-            # HWND_TOPMOST = -1, SWP_SHOWWINDOW = 0x0040, SWP_NOACTIVATE = 0x0010
-            user32.SetWindowPos(hwnd, -1, x, y, w, h, 0x0040 | 0x0010)
+
+            HWND_TOPMOST = c_void_p(-1)
+            SWP_SHOWWINDOW = 0x0040
+            SWP_NOACTIVATE = 0x0010
+            user32.SetWindowPos(hwnd, HWND_TOPMOST, x, y, w, h, SWP_SHOWWINDOW | SWP_NOACTIVATE)
             log_debug(f"Notch geometry set: expanded={expanded}, at ({x}, {y}, {w}, {h})")
     except Exception as e:
         log_debug(f"Notch geometry error: {e}")
@@ -356,6 +363,8 @@ def configure_voice_overlay_window(expanded: bool = False):
                 try:
                     import webview.platforms.winforms as wf
                     form = voice_overlay_window.native
+                    form.MinimumSize = wf.Size(0, 0)
+                    form.MaximumSize = wf.Size(0, 0)
                     form.SetStyle(wf.WinForms.ControlStyles.SupportsTransparentBackColor, True)
                     form.BackColor = wf.Color.Transparent
                 except Exception as e:
@@ -561,7 +570,7 @@ def main():
 
     # 5. Compute primary screen top-center position for the notch pill
     screen_w, _ = get_screen_metrics()
-    init_pill_w = 230
+    init_pill_w = 280
     init_pill_h = 38
     init_pill_x = max(0, (screen_w - init_pill_w) // 2)
     init_pill_y = 0
@@ -591,6 +600,7 @@ def main():
         height=init_pill_h,
         x=init_pill_x,
         y=init_pill_y,
+        min_size=(0, 0),
         frameless=True,
         on_top=True,
         transparent=True,
