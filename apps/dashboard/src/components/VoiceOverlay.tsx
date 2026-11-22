@@ -10,16 +10,16 @@ import {
   Check,
   X,
   ChevronUp,
+  ChevronLeft,
   Play,
   Volume2,
-  VolumeX,
   Sparkles,
   LayoutDashboard,
-  RotateCcw,
   EyeOff,
   Power,
   Radio,
-  Settings2
+  SlidersHorizontal,
+  SquareCheck
 } from 'lucide-react';
 
 export type VoiceTone = 'calm_concise' | 'conversational' | 'direct';
@@ -98,7 +98,6 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [showVoiceSettings, setShowVoiceSettings] = useState<boolean>(false);
   const [selectedTone, setSelectedTone] = useState<VoiceTone>('calm_concise');
-  const [activeProvider, setActiveProvider] = useState<string>('edge_tts');
   const [isListening, setIsListening] = useState<boolean>(true);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
@@ -569,7 +568,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
       }}
       className="w-full h-full flex flex-col items-center justify-start overflow-hidden select-none relative pt-0 bg-transparent font-sans"
     >
-      {/* Sleek Pitch-Black #0B0D10 Capsule Anchored Flush at Top Edge (y=0) */}
+      {/* ================= APPLE IPHONE DYNAMIC ISLAND CAPSULE ================= */}
       <div
         onClick={(e) => {
           e.stopPropagation();
@@ -580,42 +579,62 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
           if (!isExpanded) handleToggleExpand(true);
         }}
         onContextMenu={handleContextMenu}
-        style={{ backgroundColor: '#0B0D10' }}
-        className={`w-full h-full text-white border border-white/[0.08] relative flex flex-col overflow-hidden cursor-pointer backdrop-blur-2xl transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+        style={{
+          backgroundColor: '#000000',
+          boxShadow: isExpanded
+            ? '0 25px 60px -10px rgba(0,0,0,0.95), inset 0 1px 0 rgba(255,255,255,0.14)'
+            : '0 10px 25px -5px rgba(0,0,0,0.85), inset 0 1px 0 rgba(255,255,255,0.1)'
+        }}
+        className={`w-full h-full text-white border-b border-x border-white/[0.12] relative flex flex-col overflow-hidden cursor-pointer backdrop-blur-3xl transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
           isExpanded
-            ? 'rounded-b-[24px] rounded-t-none px-4 pt-2.5 pb-3 shadow-[0_20px_60px_rgba(0,0,0,0.95)]'
-            : 'rounded-b-[18px] rounded-t-none px-3 py-1 flex-row items-center justify-between shadow-[0_8px_20px_rgba(0,0,0,0.85)]'
+            ? 'rounded-b-[36px] rounded-t-none px-6 pt-3.5 pb-5'
+            : 'rounded-b-[22px] rounded-t-none px-3.5 py-1.5 flex-row items-center justify-between'
         }`}
       >
-        {/* Interior ambient edge highlight */}
-        <div className="absolute inset-0 rounded-[inherit] pointer-events-none border border-white/[0.06] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" />
+        {/* Subtle interior ambient edge highlight */}
+        <div className="absolute inset-0 rounded-[inherit] pointer-events-none border border-white/[0.04]" />
 
-        {/* ================= 1. IDLE STATE: EXACT #0B0D10 SLEEK PILL ================= */}
+        {/* ================= 1. COLLAPSED STATE: SLEEK APPLE PILL ================= */}
         {!isExpanded && (
-          <div className="w-full h-full flex items-center justify-between z-10 px-0.5">
-            {/* Status dot + SWE-03 label */}
-            <div className="flex items-center space-x-2">
-              <span
-                className={`w-2 h-2 rounded-full shrink-0 ${
-                  pendingApproval
-                    ? 'bg-amber-400 animate-pulse'
-                    : isSpeaking
-                    ? 'bg-amber-400 animate-pulse'
-                    : isEmergencyPaused
-                    ? 'bg-red-500'
-                    : isMuted
-                    ? 'bg-neutral-600'
-                    : 'bg-emerald-400 animate-pulse'
-                }`}
-              />
-              <span className="text-[11px] font-mono font-semibold tracking-tight text-white/90 truncate">
+          <div className="w-full h-full flex items-center justify-between z-10">
+            {/* Leading accessory: Glowing Indicator + Agent Badge */}
+            <div className="flex items-center space-x-2.5">
+              <span className="relative flex h-2.5 w-2.5">
+                <span
+                  className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                    pendingApproval
+                      ? 'bg-amber-400'
+                      : isSpeaking
+                      ? 'bg-amber-400'
+                      : isEmergencyPaused
+                      ? 'bg-red-500'
+                      : isMuted
+                      ? 'bg-neutral-600'
+                      : 'bg-emerald-400'
+                  }`}
+                />
+                <span
+                  className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
+                    pendingApproval
+                      ? 'bg-amber-400'
+                      : isSpeaking
+                      ? 'bg-amber-400'
+                      : isEmergencyPaused
+                      ? 'bg-red-500'
+                      : isMuted
+                      ? 'bg-neutral-500'
+                      : 'bg-emerald-400'
+                  }`}
+                />
+              </span>
+              <span className="text-[12px] font-mono font-semibold tracking-tight text-white/95">
                 {pendingApproval ? 'GATE REQ' : isEmergencyPaused ? 'PAUSED' : activeAgent}
               </span>
             </div>
 
-            {/* Mini <Strands/> orb indicator */}
-            <div className="flex items-center space-x-1.5 shrink-0">
-              <div className="w-5 h-5 relative rounded-full overflow-hidden flex items-center justify-center">
+            {/* Trailing accessory: Mini <Strands/> Audio Orb */}
+            <div className="flex items-center space-x-2 shrink-0">
+              <div className="w-6 h-6 relative rounded-full overflow-hidden flex items-center justify-center bg-white/[0.06] border border-white/10 shadow-inner">
                 <Strands
                   colors={STRANDS_COLORS}
                   speed={0.8}
@@ -633,48 +652,49 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
           </div>
         )}
 
-        {/* ================= 2. EXPANDED STATE: DYNAMIC ISLAND CONTENT ================= */}
+        {/* ================= 2. EXPANDED STATE: IPHONE LIVE ACTIVITY EXPERIENCE ================= */}
         {isExpanded && (
           <div className="w-full h-full flex flex-col justify-between z-10 animate-fadeIn">
-            {/* Minimal Header Bar */}
-            <div className="w-full flex items-center justify-between pb-1.5 shrink-0 border-b border-white/[0.06]">
-              <div className="flex items-center gap-2 truncate">
-                <span
-                  className={`w-2 h-2 rounded-full shrink-0 ${
-                    isSpeaking
-                      ? 'bg-amber-400 animate-pulse'
-                      : isMuted
-                      ? 'bg-neutral-500'
-                      : 'bg-emerald-400 animate-pulse'
-                  }`}
-                />
-                <span className="text-[11px] font-mono font-medium tracking-wider text-white/80 truncate">
-                  {isSpeaking ? 'SPEAKING' : isMuted ? 'MUTED' : `${activeAgent} · VOICE`}
+            {/* ZONE 1: APPLE-STYLE HEADER BAR */}
+            <div className="w-full flex items-center justify-between pb-2 shrink-0 border-b border-white/[0.06]">
+              {/* Left Identity Group */}
+              <div className="flex items-center gap-2.5">
+                <span className="relative flex h-2.5 w-2.5 shrink-0">
+                  <span
+                    className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                      isSpeaking
+                        ? 'bg-amber-400'
+                        : isMuted
+                        ? 'bg-neutral-600'
+                        : 'bg-emerald-400'
+                    }`}
+                  />
+                  <span
+                    className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
+                      isSpeaking
+                        ? 'bg-amber-400'
+                        : isMuted
+                        ? 'bg-neutral-500'
+                        : 'bg-emerald-400'
+                    }`}
+                  />
                 </span>
-                <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/60 truncate max-w-[120px]">
-                  {currentVoiceObj?.name.split(' ')[0]}
-                </span>
+                <div className="flex flex-col">
+                  <span className="text-xs font-semibold tracking-tight text-white/95 leading-none">
+                    {activeAgent}
+                  </span>
+                  <span className="text-[10px] text-white/40 font-mono tracking-wider pt-0.5 leading-none">
+                    {isSpeaking ? 'SPEAKING' : isMuted ? 'MUTED' : 'AUTONOMOUS FLEET'}
+                  </span>
+                </div>
               </div>
 
-              {/* Action Icons in Header */}
-              <div className="flex items-center gap-1 shrink-0">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowVoiceSettings(!showVoiceSettings);
-                  }}
-                  title="Custom Voice Settings (voice-generator.com)"
-                  className={`w-6 h-6 flex items-center justify-center rounded-full transition-colors ${
-                    showVoiceSettings ? 'bg-primary text-on-primary' : 'hover:bg-white/10 text-white/50 hover:text-white'
-                  }`}
-                >
-                  <Sliders className="w-3.5 h-3.5" />
-                </button>
-
+              {/* Right Utility Navigation (Uncluttered: Just Dashboard & Close) */}
+              <div className="flex items-center gap-2 shrink-0">
                 <button
                   onClick={handleRestoreFullApp}
-                  title="Open Command Center Dashboard"
-                  className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-white/10 text-white/50 hover:text-white transition-colors"
+                  title="Open Command Center (Dashboard)"
+                  className="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-white/[0.14] text-white/70 hover:text-white flex items-center justify-center transition-all border border-white/[0.08]"
                 >
                   <LayoutDashboard className="w-3.5 h-3.5" />
                 </button>
@@ -684,253 +704,266 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
                     e.stopPropagation();
                     handleToggleExpand(false);
                   }}
-                  title="Collapse notch (Esc)"
-                  className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-white/10 text-white/50 hover:text-white transition-colors"
+                  title="Collapse Dynamic Island (Esc)"
+                  className="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-white/[0.14] text-white/70 hover:text-white flex items-center justify-center transition-all border border-white/[0.08]"
                 >
                   <ChevronUp className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
-            {/* Approval Gate Banner (If pending) */}
+            {/* APPROVAL GATE CARD (Apple Pay / Face ID Authorization Style) */}
             {pendingApproval && (
-              <div className="w-full py-1.5 px-3 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-between text-xs my-1 shrink-0">
-                <div className="truncate max-w-[210px]">
-                  <span className="text-[9px] font-mono text-amber-400 uppercase font-bold block">
-                    Gate #{pendingApproval.id.slice(-4)}
+              <div className="w-full my-2 p-3 rounded-2xl bg-gradient-to-b from-amber-500/[0.12] to-amber-950/[0.25] border border-amber-500/30 flex items-center justify-between shrink-0 shadow-lg animate-fadeIn">
+                <div className="truncate max-w-[240px] pr-2">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-400 text-black font-bold">
+                      GATE #{pendingApproval.id.slice(-4)}
+                    </span>
+                    <span className="text-[10px] text-amber-200/80 font-medium">Authorization Required</span>
+                  </div>
+                  <span className="text-xs text-white font-semibold truncate block leading-snug">
+                    {pendingApproval.action}
                   </span>
-                  <span className="text-white font-medium truncate block">{pendingApproval.action}</span>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-2 shrink-0">
                   <LiquidButton
                     variant="destructive"
                     size="sm"
+                    className="rounded-full px-3.5 py-1.5 text-xs font-semibold"
                     onClick={(e) => {
                       e.stopPropagation();
                       if (onDenyAction) onDenyAction(pendingApproval.id, pendingApproval.token);
                     }}
                   >
-                    <X className="w-3 h-3" />
-                    <span>Reject</span>
+                    <X className="w-3.5 h-3.5" />
+                    <span>Decline</span>
                   </LiquidButton>
 
                   <LiquidButton
                     variant="amber"
                     size="sm"
+                    className="rounded-full px-4 py-1.5 text-xs font-semibold"
                     onClick={(e) => {
                       e.stopPropagation();
                       if (onApproveAction) onApproveAction(pendingApproval.id, pendingApproval.token);
                     }}
                   >
-                    <Check className="w-3 h-3" />
-                    <span>Approve</span>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Authorize</span>
                   </LiquidButton>
                 </div>
               </div>
             )}
 
-            {/* VIEW A: MAIN ORB STAGE */}
+            {/* ZONE 2: MAIN HERO VIEW (Acoustic Chamber & Dynamic Orb) */}
             {!showVoiceSettings && (
               <>
-                {/* Center Stage: <Strands /> WebGL2 Orb Visualizer */}
-                <div className="w-full h-[150px] relative flex items-center justify-center overflow-hidden my-auto">
-                  <Strands
-                    colors={STRANDS_COLORS}
-                    count={3}
-                    speed={1.05}
-                    amplitude={1.1}
-                    waviness={1.0}
-                    energy={0.65}
-                    thickness={1.0}
-                    spread={1.0}
-                    glow={1.1}
-                    taper={1.0}
-                    intensity={1.0}
-                    saturation={1.0}
-                    scale={1.0}
-                    glass={true}
-                    glassSize={1.0}
-                    refraction={1.0}
-                    rim={1.1}
-                    dispersion={1.0}
-                    listening={!isSpeaking && !isMuted}
-                    level={audioLevel}
-                    interactive={true}
-                    clickPulse={true}
-                    intro={true}
-                    lightMode={false}
-                    opacity={1.0}
-                  />
+                <div className="w-full flex-1 flex flex-col items-center justify-center py-2 my-auto">
+                  {/* Acoustic Glass Lens */}
+                  <div className="w-36 h-36 relative flex items-center justify-center rounded-full bg-gradient-to-b from-white/[0.05] via-transparent to-black/40 border border-white/[0.08] shadow-[inset_0_1px_2px_rgba(255,255,255,0.12),0_12px_32px_rgba(0,0,0,0.6)] overflow-hidden">
+                    <Strands
+                      colors={STRANDS_COLORS}
+                      count={3}
+                      speed={1.05}
+                      amplitude={1.15}
+                      waviness={1.0}
+                      energy={0.65}
+                      thickness={1.0}
+                      spread={1.0}
+                      glow={1.15}
+                      taper={1.0}
+                      intensity={1.0}
+                      saturation={1.0}
+                      scale={1.0}
+                      glass={true}
+                      glassSize={1.0}
+                      refraction={1.0}
+                      rim={1.1}
+                      dispersion={1.0}
+                      listening={!isSpeaking && !isMuted}
+                      level={audioLevel}
+                      interactive={true}
+                      clickPulse={true}
+                      intro={true}
+                      lightMode={false}
+                      opacity={1.0}
+                    />
+                  </div>
+
+                  {/* Subtitle / Caption Typography */}
+                  <div className="w-full px-6 pt-3 text-center">
+                    <p className="text-xs font-medium text-white/90 truncate leading-snug">
+                      {captionText}
+                    </p>
+                  </div>
                 </div>
 
-                {/* Short Live Captions / Subtitle */}
-                <div className="w-full px-2 text-center shrink-0">
-                  <p className="text-xs font-medium text-white/90 truncate leading-snug">
-                    {captionText}
-                  </p>
-                </div>
-
-                {/* Interactive Action Bar with LiquidButton & MetalButton */}
-                <div className="w-full flex items-center justify-center gap-2 pt-2 shrink-0">
+                {/* ZONE 3: APPLE BOTTOM TACTILE DOCK (3 Perfectly Spaced Buttons) */}
+                <div className="w-full flex items-center justify-center gap-3 pt-2 shrink-0">
+                  {/* Button 1: Mic Mute */}
                   <LiquidButton
                     variant={isMuted ? 'default' : 'primary'}
-                    size="sm"
+                    size="default"
+                    className="flex-1 max-w-[130px] rounded-full h-10 gap-2 font-medium"
                     onClick={toggleMute}
                     title={isMuted ? 'Unmute microphone' : 'Mute microphone'}
                   >
-                    {isMuted ? <MicOff className="w-3.5 h-3.5 text-neutral-400" /> : <Mic className="w-3.5 h-3.5 text-blue-200" />}
+                    {isMuted ? <MicOff className="w-4 h-4 text-neutral-400" /> : <Mic className="w-4 h-4 text-blue-200" />}
                     <span>{isMuted ? 'Muted' : 'Mute'}</span>
                   </LiquidButton>
 
+                  {/* Button 2: Voice Customizer */}
                   <LiquidButton
                     variant="default"
-                    size="sm"
+                    size="default"
+                    className="flex-1 max-w-[130px] rounded-full h-10 gap-2 font-medium"
                     onClick={(e) => {
                       e.stopPropagation();
                       setShowVoiceSettings(true);
                     }}
-                    title="Open Voice Generator Controls"
+                    title="Customize Voice & Acoustics (voice-generator.com)"
                   >
-                    <Sliders className="w-3.5 h-3.5 text-white/80" />
+                    <SlidersHorizontal className="w-4 h-4 text-white/80" />
                     <span>Voice</span>
                   </LiquidButton>
 
-                  <MetalButton
-                    variant="titanium"
-                    size="sm"
-                    onClick={handleRestoreFullApp}
-                    title="Open Full Dashboard"
-                  >
-                    <LayoutDashboard className="w-3.5 h-3.5 text-neutral-300" />
-                    <span>Dashboard</span>
-                  </MetalButton>
-
+                  {/* Button 3: End Call */}
                   <MetalButton
                     variant="dark"
-                    size="sm"
+                    size="default"
+                    className="flex-1 max-w-[130px] rounded-full h-10 gap-2 font-medium"
                     onClick={handleEndSession}
-                    title="End voice session and collapse notch"
+                    title="End voice session and collapse"
                   >
-                    <PhoneOff className="w-3.5 h-3.5 text-red-400" />
+                    <PhoneOff className="w-4 h-4 text-red-400" />
                     <span>End</span>
                   </MetalButton>
                 </div>
               </>
             )}
 
-            {/* VIEW B: CUSTOM VOICE-GENERATOR.COM CONTROLS */}
+            {/* ZONE 2 ALTERNATE: APPLE SETTINGS SHEET (Voice-Generator.com Suite) */}
             {showVoiceSettings && (
               <div
                 onClick={(e) => e.stopPropagation()}
-                className="w-full flex-1 flex flex-col justify-between py-1 px-1 overflow-y-auto space-y-2 animate-fadeIn text-xs"
+                className="w-full flex-1 flex flex-col justify-between py-1 overflow-y-auto space-y-3 animate-fadeIn text-xs"
               >
-                {/* Voice Selector */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] font-mono text-white/60 uppercase tracking-wider flex items-center gap-1">
-                      <Radio className="w-3 h-3 text-primary" />
-                      Voice Model (voice-generator.com)
-                    </span>
-                    <span className="text-[10px] font-mono text-white/40">{currentVoiceObj?.language}</span>
-                  </div>
-                  <select
-                    value={selectedVoiceId}
-                    onChange={(e) => setSelectedVoiceId(e.target.value)}
-                    className="w-full bg-neutral-900 border border-white/15 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-primary/60 font-medium"
+                {/* Sheet Sub-Header */}
+                <div className="flex items-center justify-between px-1">
+                  <button
+                    onClick={() => setShowVoiceSettings(false)}
+                    className="flex items-center gap-1 text-primary hover:text-primary/80 font-medium transition-colors"
                   >
-                    {voiceList.map((v) => (
-                      <option key={v.id} value={v.id} className="bg-neutral-900 text-white">
-                        {v.name} ({v.gender}, {v.language})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Tone Pill Tabs */}
-                <div>
-                  <span className="text-[10px] font-mono text-white/60 uppercase tracking-wider block mb-1">
-                    Persona Tone
+                    <ChevronLeft className="w-4 h-4" />
+                    <span>Voice</span>
+                  </button>
+                  <span className="font-semibold text-white/90 text-[13px] tracking-tight">
+                    Voice & Acoustics
                   </span>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {(['calm_concise', 'conversational', 'direct'] as VoiceTone[]).map((tone) => (
-                      <button
-                        key={tone}
-                        onClick={() => setSelectedTone(tone)}
-                        className={`py-1 px-2 rounded-md font-mono text-[10px] border transition-all ${
-                          selectedTone === tone
-                            ? 'bg-primary/20 border-primary text-primary font-bold shadow-sm'
-                            : 'bg-white/5 border-white/10 text-white/60 hover:text-white'
-                        }`}
-                      >
-                        {tone === 'calm_concise' ? 'Concise' : tone === 'conversational' ? 'Colleague' : 'Direct'}
-                      </button>
-                    ))}
+                  <div className="w-12" />
+                </div>
+
+                {/* Segmented Controller for Tone (Apple Pill Tabs) */}
+                <div className="w-full bg-white/[0.06] p-1 rounded-full flex items-center border border-white/[0.08]">
+                  {(['calm_concise', 'conversational', 'direct'] as VoiceTone[]).map((tone) => (
+                    <button
+                      key={tone}
+                      onClick={() => setSelectedTone(tone)}
+                      className={`flex-1 py-1.5 rounded-full text-center font-medium transition-all ${
+                        selectedTone === tone
+                          ? 'bg-primary text-on-primary font-semibold shadow-sm'
+                          : 'text-white/60 hover:text-white'
+                      }`}
+                    >
+                      {tone === 'calm_concise' ? 'Concise' : tone === 'conversational' ? 'Colleague' : 'Direct'}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Grouped Inset Card for Voice Parameters */}
+                <div className="space-y-3 bg-white/[0.04] p-3 rounded-2xl border border-white/[0.08]">
+                  {/* Voice Selector Row */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[11px] font-medium text-white/70">Neural Model</span>
+                      <span className="text-[10px] font-mono text-white/40">{currentVoiceObj?.language}</span>
+                    </div>
+                    <select
+                      value={selectedVoiceId}
+                      onChange={(e) => setSelectedVoiceId(e.target.value)}
+                      className="w-full bg-neutral-900/90 border border-white/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-primary font-medium"
+                    >
+                      {voiceList.map((v) => (
+                        <option key={v.id} value={v.id} className="bg-neutral-900 text-white">
+                          {v.name} ({v.gender}, {v.language})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Sliders Grid: Speed & Pitch */}
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    {/* Speaking Speed */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-white/60">Speed</span>
+                        <span className="font-mono text-primary font-semibold">{speechSpeed.toFixed(2)}x</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0.6"
+                        max="1.8"
+                        step="0.05"
+                        value={speechSpeed}
+                        onChange={(e) => setSpeechSpeed(parseFloat(e.target.value))}
+                        className="w-full h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-primary"
+                      />
+                    </div>
+
+                    {/* Voice Pitch */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-white/60">Pitch</span>
+                        <span className="font-mono text-primary font-semibold">
+                          {speechPitch > 0 ? `+${speechPitch}Hz` : `${speechPitch}Hz`}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="-25"
+                        max="25"
+                        step="1"
+                        value={speechPitch}
+                        onChange={(e) => setSpeechPitch(parseInt(e.target.value))}
+                        className="w-full h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-primary"
+                      />
+                    </div>
                   </div>
                 </div>
 
-                {/* Sliders: Speed, Pitch, Volume */}
-                <div className="space-y-1.5 bg-white/[0.03] p-2 rounded-lg border border-white/[0.06]">
-                  {/* Speed Slider */}
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-white/70">Speed:</span>
-                    <span className="text-[10px] font-mono text-primary font-bold">{speechSpeed.toFixed(2)}x</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.6"
-                    max="1.8"
-                    step="0.05"
-                    value={speechSpeed}
-                    onChange={(e) => setSpeechSpeed(parseFloat(e.target.value))}
-                    className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-primary"
-                  />
-
-                  {/* Pitch Slider */}
-                  <div className="flex items-center justify-between pt-1">
-                    <span className="text-[10px] text-white/70">Pitch:</span>
-                    <span className="text-[10px] font-mono text-primary font-bold">
-                      {speechPitch > 0 ? `+${speechPitch}Hz` : `${speechPitch}Hz`}
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="-25"
-                    max="25"
-                    step="1"
-                    value={speechPitch}
-                    onChange={(e) => setSpeechPitch(parseInt(e.target.value))}
-                    className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-primary"
-                  />
-                </div>
-
-                {/* Test & Save Action Row */}
-                <div className="flex items-center gap-2 pt-1">
+                {/* Bottom Action Row: Test Voice & Save */}
+                <div className="flex items-center gap-3 pt-1">
                   <LiquidButton
                     variant="primary"
-                    size="sm"
-                    className="flex-1"
+                    size="default"
+                    className="flex-1 rounded-full h-10 font-medium"
                     disabled={isTestingVoice}
                     onClick={() => handlePreviewVoice()}
                   >
-                    <Play className="w-3.5 h-3.5 text-blue-200" />
-                    <span>{isTestingVoice ? 'Synthesizing...' : 'Test Voice'}</span>
+                    <Play className="w-4 h-4 text-blue-200" />
+                    <span>{isTestingVoice ? 'Synthesizing...' : 'Preview Voice'}</span>
                   </LiquidButton>
 
-                  <MetalButton
-                    variant="titanium"
-                    size="sm"
+                  <LiquidButton
+                    variant="emerald"
+                    size="default"
+                    className="flex-1 rounded-full h-10 font-medium"
                     onClick={handleSaveVoiceConfig}
                   >
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Save</span>
-                  </MetalButton>
-
-                  <button
-                    onClick={() => setShowVoiceSettings(false)}
-                    className="px-2.5 py-1 text-[11px] text-white/60 hover:text-white rounded-lg hover:bg-white/10 transition-colors"
-                  >
-                    Back
-                  </button>
+                    <Check className="w-4 h-4 text-emerald-200" />
+                    <span>Apply Voice</span>
+                  </LiquidButton>
                 </div>
               </div>
             )}
@@ -943,16 +976,16 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
         <div
           onClick={(e) => e.stopPropagation()}
           style={{ top: Math.min(showContextMenu.y, 220), left: Math.min(showContextMenu.x, 240) }}
-          className="fixed pointer-events-auto z-50 w-52 rounded-xl bg-neutral-900/95 border border-white/10 shadow-2xl p-1.5 text-xs font-sans text-neutral-300 backdrop-blur-xl animate-fadeIn"
+          className="fixed pointer-events-auto z-50 w-52 rounded-2xl bg-neutral-900/95 border border-white/10 shadow-2xl p-1.5 text-xs font-sans text-neutral-300 backdrop-blur-2xl animate-fadeIn"
         >
           <button
             onClick={() => {
               handleToggleExpand(!isExpanded);
               setShowContextMenu(null);
             }}
-            className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-2 rounded-xl hover:bg-white/10 hover:text-white flex items-center gap-2.5 font-medium transition-colors"
           >
-            <ChevronUp className="w-3.5 h-3.5" />
+            <ChevronUp className="w-4 h-4" />
             <span>{isExpanded ? 'Collapse to Pill' : 'Expand Island'}</span>
           </button>
 
@@ -963,29 +996,29 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
               setShowVoiceSettings(true);
               notifyNativeResize(true);
             }}
-            className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-2 rounded-xl hover:bg-white/10 hover:text-white flex items-center gap-2.5 font-medium transition-colors"
           >
-            <Sliders className="w-3.5 h-3.5 text-primary" />
-            <span>Voice Generator Settings</span>
+            <SlidersHorizontal className="w-4 h-4 text-primary" />
+            <span>Voice & Acoustics</span>
           </button>
 
           <button
             onClick={handleRestoreFullApp}
-            className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-2 rounded-xl hover:bg-white/10 hover:text-white flex items-center gap-2.5 font-medium transition-colors"
           >
-            <LayoutDashboard className="w-3.5 h-3.5" />
-            <span>Open Command Center</span>
+            <LayoutDashboard className="w-4 h-4" />
+            <span>Command Center</span>
           </button>
 
           <button
             onClick={toggleMute}
-            className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-2 rounded-xl hover:bg-white/10 hover:text-white flex items-center gap-2.5 font-medium transition-colors"
           >
-            {isMuted ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
+            {isMuted ? <Mic className="w-4 h-4 text-blue-400" /> : <MicOff className="w-4 h-4" />}
             <span>{isMuted ? 'Unmute Mic' : 'Mute Mic'}</span>
           </button>
 
-          <div className="h-[1px] bg-white/10 my-1" />
+          <div className="h-[1px] bg-white/10 my-1.5" />
 
           <button
             onClick={() => {
@@ -993,9 +1026,9 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
               if (onCloseOverlay) onCloseOverlay();
               else fetch(`${API_BASE}/overlay/toggle`, { method: 'POST' }).catch(() => {});
             }}
-            className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-neutral-400 hover:text-white flex items-center gap-2"
+            className="w-full text-left px-3 py-2 rounded-xl hover:bg-white/10 text-neutral-400 hover:text-white flex items-center gap-2.5 font-medium transition-colors"
           >
-            <EyeOff className="w-3.5 h-3.5" />
+            <EyeOff className="w-4 h-4" />
             <span>Hide Island (Ctrl+Shift+Space)</span>
           </button>
 
@@ -1008,9 +1041,9 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
                 fetch(`${API_BASE}/tray/exit`, { method: 'POST' }).catch(() => {});
               }
             }}
-            className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-red-500/20 text-red-400 flex items-center gap-2"
+            className="w-full text-left px-3 py-2 rounded-xl hover:bg-red-500/20 text-red-400 flex items-center gap-2.5 font-medium transition-colors"
           >
-            <Power className="w-3.5 h-3.5" />
+            <Power className="w-4 h-4" />
             <span>Exit PHOENIX</span>
           </button>
         </div>

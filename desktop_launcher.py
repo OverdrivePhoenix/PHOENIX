@@ -246,8 +246,8 @@ def set_notch_geometry(expanded: bool):
         if hwnd:
             user32 = ctypes.windll.user32
             screen_w, _ = get_screen_metrics()
-            w = 460 if expanded else 220
-            h = 360 if expanded else 38
+            w = 480 if expanded else 230
+            h = 390 if expanded else 40
             x = max(0, (screen_w - w) // 2)
             y = 0
             # HWND_TOPMOST = -1, SWP_SHOWWINDOW = 0x0040, SWP_NOACTIVATE = 0x0010
@@ -536,8 +536,8 @@ def main():
 
     # 5. Compute primary screen top-center position for the notch pill
     screen_w, _ = get_screen_metrics()
-    init_pill_w = 220
-    init_pill_h = 38
+    init_pill_w = 230
+    init_pill_h = 40
     init_pill_x = max(0, (screen_w - init_pill_w) // 2)
     init_pill_y = 0
 
