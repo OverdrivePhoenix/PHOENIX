@@ -40,7 +40,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
   onCloseOverlay,
   onOpenCommandCenter,
   currentProjectName = 'Project PHOENIX',
-  activeAgent = 'SWE-03 · Run',
+  activeAgent = 'SWE-03',
   pendingApproval = null,
   dailySpend = 18.42,
   isEmergencyPaused = false,
@@ -48,7 +48,6 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
   onDenyAction,
   onSendCommand
 }) => {
-  // Island morphing state: 'notch' (compact top pill) or 'expanded' (full island)
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [selectedTone, setSelectedTone] = useState<VoiceTone>('calm_concise');
   const [activeProvider, setActiveProvider] = useState<string>('edge_tts');
@@ -66,17 +65,30 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
   const recognitionRef = useRef<any>(null);
   const activeAudioElementRef = useRef<HTMLAudioElement | null>(null);
 
-  // Set transparent background for overlay mode
+  // Synchronize OS window resize with expanded state
+  const notifyNativeResize = async (expanded: boolean) => {
+    try {
+      if ((window as any).pywebview?.api?.set_expanded) {
+        await (window as any).pywebview.api.set_expanded(expanded);
+      } else {
+        await fetch(`${API_BASE}/overlay/resize`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ expanded })
+        });
+      }
+    } catch {}
+  };
+
+  const handleToggleExpand = (expanded: boolean) => {
+    setIsExpanded(expanded);
+    notifyNativeResize(expanded);
+  };
+
+  // Shrink native window on mount to exact pill size
   useEffect(() => {
-    if (isStandaloneOverlay) {
-      document.documentElement.classList.add('overlay-transparent');
-      document.body.classList.add('overlay-transparent');
-    }
-    return () => {
-      document.documentElement.classList.remove('overlay-transparent');
-      document.body.classList.remove('overlay-transparent');
-    };
-  }, [isStandaloneOverlay]);
+    notifyNativeResize(false);
+  }, []);
 
   // Load configured TTS provider
   useEffect(() => {
@@ -89,42 +101,25 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
       .catch(() => {});
   }, []);
 
-  // Auto-expand if a high-priority approval gate arrives
+  // Auto-expand if high-priority approval arrives
   useEffect(() => {
     if (pendingApproval) {
-      setIsExpanded(true);
+      handleToggleExpand(true);
       setCaptionText(`Approval required: ${pendingApproval.action}`);
     }
   }, [pendingApproval?.id]);
 
-  // Keyboard shortcut listener: Escape collapses the island back to notch
+  // Keyboard shortcut listener: Escape collapses the island back to pill
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setIsExpanded(false);
+        handleToggleExpand(false);
         setShowContextMenu(null);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
-
-  // Handle desktop click-through state via desktop bridge
-  const setInteractive = async (interactive: boolean) => {
-    try {
-      if ((window as any).pywebview?.api?.set_interactive) {
-        (window as any).pywebview.api.set_interactive(interactive);
-      } else {
-        await fetch(`${API_BASE}/overlay/interactive`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ interactive })
-        });
-      }
-    } catch {
-      // Offline fallback
-    }
-  };
 
   // Initialize Microphone & Web Audio Analyser
   useEffect(() => {
@@ -163,7 +158,6 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
             sum += dataArray[i];
           }
           const avg = sum / (dataArray.length * 255);
-          // Scale smoothly between resting 0.04 and active 0.95
           setAudioLevel((prev) => {
             const target = Math.max(0.04, Math.min(1.0, avg * 2.2));
             return prev + (target - prev) * 0.28;
@@ -178,7 +172,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
 
     initAudio();
 
-    // Setup Web Speech Recognition with low-latency conversational turn-taking
+    // Setup Web Speech Recognition
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       try {
@@ -237,7 +231,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
     };
   }, []);
 
-  // Speak using swappable backend TTS provider (Edge Neural / ElevenLabs / Google Cloud)
+  // Speak using swappable backend TTS provider
   const speakWithActiveProvider = async (rawText: string, tone: VoiceTone = selectedTone) => {
     setIsSpeaking(true);
     setIsListening(false);
@@ -293,9 +287,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
         await audio.play();
         return;
       }
-    } catch {
-      // Backend TTS fallback
-    }
+    } catch {}
 
     fallbackBrowserSpeech(rawText, tone);
   };
@@ -345,8 +337,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
   const handleUserUtterance = async (speechText: string) => {
     if (!speechText.trim()) return;
 
-    // Automatically expand the notch smoothly into the voice view
-    setIsExpanded(true);
+    handleToggleExpand(true);
     setCaptionText(`"${speechText}"`);
     setIsListening(false);
 
@@ -407,8 +398,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
     setIsSpeaking(false);
     setIsListening(true);
     setCaptionText('Listening for your command, Sir...');
-    // Retract smoothly back to the compact top pill
-    setIsExpanded(false);
+    handleToggleExpand(false);
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -429,41 +419,39 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
   return (
     <div
       onClick={() => {
-        if (isExpanded) setIsExpanded(false);
+        if (isExpanded) handleToggleExpand(false);
         setShowContextMenu(null);
       }}
-      className={`w-full h-full flex flex-col items-center justify-start overflow-hidden select-none relative pt-0 ${
-        isStandaloneOverlay ? 'bg-transparent pointer-events-none' : 'bg-surface-container-lowest'
-      }`}
+      className="w-full h-full flex flex-col items-center justify-start overflow-hidden select-none relative pt-0 bg-transparent"
     >
-      {/* Dynamic Notch / Island: Anchored flush against the screen's top bezel (y=0) */}
+      {/* Sleek Pitch-Black #0B0D10 Capsule Anchored Flush at Top Edge (y=0) */}
       <div
         onClick={(e) => {
           e.stopPropagation();
           setShowContextMenu(null);
-          if (!isExpanded) setIsExpanded(true);
+          if (!isExpanded) handleToggleExpand(true);
+        }}
+        onMouseEnter={() => {
+          if (!isExpanded) handleToggleExpand(true);
         }}
         onContextMenu={handleContextMenu}
-        onMouseEnter={() => setInteractive(true)}
-        onMouseLeave={() => {
-          if (!isExpanded) setInteractive(false);
-        }}
-        className={`pointer-events-auto island-morph bg-black text-white border border-white/10 relative flex flex-col overflow-hidden cursor-pointer backdrop-blur-2xl transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+        style={{ backgroundColor: '#0B0D10' }}
+        className={`w-full h-full text-white border border-white/[0.08] relative flex flex-col overflow-hidden cursor-pointer backdrop-blur-2xl transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
           isExpanded
-            ? 'w-[420px] h-[280px] rounded-b-[28px] rounded-t-none px-4 pt-2.5 pb-3 shadow-[0_24px_60px_rgba(0,0,0,0.9),0_0_20px_rgba(59,130,246,0.18)]'
-            : 'w-[230px] h-[36px] rounded-b-2xl rounded-t-none px-3.5 py-1.5 flex-row items-center justify-between hover:w-[250px] shadow-[0_12px_28px_rgba(0,0,0,0.7)]'
+            ? 'rounded-b-[24px] rounded-t-none px-4 pt-2 pb-3 shadow-[0_20px_50px_rgba(0,0,0,0.95)]'
+            : 'rounded-b-[18px] rounded-t-none px-3 py-1 flex-row items-center justify-between shadow-[0_8px_20px_rgba(0,0,0,0.85)]'
         }`}
       >
-        {/* Subtle interior ambient rim border */}
-        <div className="absolute inset-0 rounded-[inherit] pointer-events-none border border-white/5 shadow-island-ambient" />
+        {/* Subtle interior ambient edge highlight */}
+        <div className="absolute inset-0 rounded-[inherit] pointer-events-none border border-white/[0.05] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" />
 
-        {/* ================= 1. IDLE STATE: SLIM SLEEK TOP-CENTER PILL ================= */}
+        {/* ================= 1. IDLE STATE: EXACT #0B0D10 SLEEK PILL ================= */}
         {!isExpanded && (
-          <div className="w-full h-full flex items-center justify-between z-10">
-            {/* Status dot + text */}
+          <div className="w-full h-full flex items-center justify-between z-10 px-0.5">
+            {/* Status dot + SWE-03 label */}
             <div className="flex items-center space-x-2">
               <span
-                className={`w-2 h-2 rounded-full ${
+                className={`w-2 h-2 rounded-full shrink-0 ${
                   pendingApproval
                     ? 'bg-amber-400 animate-pulse'
                     : isSpeaking
@@ -475,14 +463,14 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
                     : 'bg-emerald-400 animate-pulse'
                 }`}
               />
-              <span className="text-[11px] font-mono font-medium tracking-tight text-white/90">
-                {pendingApproval ? 'GATE PENDING' : isEmergencyPaused ? 'FLEET PAUSED' : activeAgent}
+              <span className="text-[11px] font-mono font-semibold tracking-tight text-white/90 truncate">
+                {pendingApproval ? 'GATE REQ' : isEmergencyPaused ? 'PAUSED' : activeAgent}
               </span>
             </div>
 
-            {/* Mini Strands orb indicator / mini equalizer */}
-            <div className="flex items-center space-x-2">
-              <div className="w-6 h-6 relative rounded-full overflow-hidden flex items-center justify-center">
+            {/* Mini <Strands/> orb indicator */}
+            <div className="flex items-center space-x-1.5 shrink-0">
+              <div className="w-5 h-5 relative rounded-full overflow-hidden flex items-center justify-center">
                 <Strands
                   colors={STRANDS_COLORS}
                   speed={0.8}
@@ -492,22 +480,22 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
                   listening={!isSpeaking && !isMuted}
                   glass={false}
                   interactive={false}
-                  scale={0.9}
-                  opacity={0.9}
+                  scale={0.85}
+                  opacity={0.95}
                 />
               </div>
             </div>
           </div>
         )}
 
-        {/* ================= 2. EXPANDED STATE: MINIMAL, HUMANE VOICE & NOTCH VIEW ================= */}
+        {/* ================= 2. EXPANDED STATE: MINIMAL, HUMANE VOICE VIEW ================= */}
         {isExpanded && (
           <div className="w-full h-full flex flex-col justify-between z-10 animate-fadeIn">
-            {/* Minimal Header Bar: Status & Collapse Chevron (NO window buttons, NO popout box) */}
-            <div className="w-full flex items-center justify-between pb-1 shrink-0">
+            {/* Minimal Header Bar: Status & Collapse Chevron */}
+            <div className="w-full flex items-center justify-between pb-1 shrink-0 border-b border-white/[0.06]">
               <div className="flex items-center gap-2">
                 <span
-                  className={`w-2 h-2 rounded-full ${
+                  className={`w-2 h-2 rounded-full shrink-0 ${
                     isSpeaking
                       ? 'bg-amber-400 animate-pulse'
                       : isMuted
@@ -515,8 +503,8 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
                       : 'bg-emerald-400 animate-pulse'
                   }`}
                 />
-                <span className="text-[11px] font-mono font-semibold tracking-wider text-white/80">
-                  {isSpeaking ? 'J.A.R.V.I.S. SPEAKING' : isMuted ? 'MIC MUTED' : 'PHOENIX VOICE'}
+                <span className="text-[11px] font-mono font-medium tracking-wider text-white/80">
+                  {isSpeaking ? 'J.A.R.V.I.S. SPEAKING' : isMuted ? 'MIC MUTED' : `${activeAgent} · VOICE`}
                 </span>
               </div>
 
@@ -524,21 +512,21 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  setIsExpanded(false);
+                  handleToggleExpand(false);
                 }}
                 title="Collapse notch (Esc)"
                 className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-white/10 text-white/50 hover:text-white transition-colors"
               >
-                <span className="material-symbols-outlined text-[18px]">expand_less</span>
+                <span className="material-symbols-outlined text-[17px]">expand_less</span>
               </button>
             </div>
 
-            {/* Approval Gate Banner (If approval is pending) */}
+            {/* Approval Gate Banner (If pending) */}
             {pendingApproval && (
-              <div className="w-full py-1.5 px-3 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-between text-xs my-1">
-                <div className="truncate max-w-[220px]">
+              <div className="w-full py-1.5 px-3 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-between text-xs my-1 shrink-0">
+                <div className="truncate max-w-[210px]">
                   <span className="text-[9px] font-mono text-amber-400 uppercase font-bold block">
-                    Security Gate #{pendingApproval.id.slice(-4)}
+                    Gate #{pendingApproval.id.slice(-4)}
                   </span>
                   <span className="text-white font-medium truncate block">{pendingApproval.action}</span>
                 </div>
@@ -565,8 +553,8 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
               </div>
             )}
 
-            {/* Center Stage: React Bits <Strands /> WebGL2 Orb Visualizer */}
-            <div className="w-full h-[145px] relative flex items-center justify-center overflow-hidden my-auto">
+            {/* Center Stage: <Strands /> WebGL2 Orb Visualizer */}
+            <div className="w-full h-[140px] relative flex items-center justify-center overflow-hidden my-auto">
               <Strands
                 colors={STRANDS_COLORS}
                 count={3}
@@ -596,7 +584,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
               />
             </div>
 
-            {/* Short Live Captions / Transcription */}
+            {/* Short Live Captions / Subtitle */}
             <div className="w-full px-2 text-center shrink-0">
               <p className="text-xs font-medium text-white/90 truncate leading-snug font-sans">
                 {captionText}
@@ -605,7 +593,6 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
 
             {/* Humane Minimal Controls: Just Mute and End Session */}
             <div className="w-full flex items-center justify-center gap-3 pt-2 shrink-0">
-              {/* Mute / Unmute Toggle */}
               <button
                 onClick={toggleMute}
                 className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-medium transition-all ${
@@ -621,7 +608,6 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
                 <span>{isMuted ? 'Muted' : 'Mute'}</span>
               </button>
 
-              {/* End Voice Session */}
               <button
                 onClick={handleEndSession}
                 className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-medium bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 transition-all"
@@ -639,12 +625,12 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
       {showContextMenu && (
         <div
           onClick={(e) => e.stopPropagation()}
-          style={{ top: showContextMenu.y, left: Math.min(showContextMenu.x, 320) }}
+          style={{ top: Math.min(showContextMenu.y, 200), left: Math.min(showContextMenu.x, 240) }}
           className="fixed pointer-events-auto z-50 w-48 rounded-xl bg-neutral-900/95 border border-white/10 shadow-2xl p-1.5 text-xs font-sans text-neutral-300 backdrop-blur-xl animate-fadeIn"
         >
           <button
             onClick={() => {
-              setIsExpanded(!isExpanded);
+              handleToggleExpand(!isExpanded);
               setShowContextMenu(null);
             }}
             className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 hover:text-white flex items-center gap-2"
@@ -684,7 +670,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
             className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-neutral-400 hover:text-white flex items-center gap-2"
           >
             <span className="material-symbols-outlined text-[15px]">visibility_off</span>
-            <span>Hide Overlay</span>
+            <span>Hide Notch</span>
           </button>
 
           <button

@@ -350,6 +350,8 @@ async def set_emergency_pause(payload: EmergencyPauseRequest):
 _restore_window_event = False
 _toggle_overlay_event = False
 _overlay_is_interactive = True
+_notch_expanded_event = None
+_exit_app_event = False
 
 @app.post("/tray/restore-window")
 async def request_restore_window():
@@ -363,6 +365,32 @@ async def toggle_overlay_window():
     _toggle_overlay_event = True
     return {"status": "ok", "action": "toggle_overlay_requested"}
 
+@app.post("/overlay/resize")
+async def resize_overlay_route(payload: dict):
+    global _notch_expanded_event
+    expanded = payload.get("expanded", False)
+    _notch_expanded_event = expanded
+    try:
+        import ctypes
+        hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Notch")
+        if not hwnd:
+            hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Voice Overlay")
+        if hwnd:
+            screen_w = ctypes.windll.user32.GetSystemMetrics(0)
+            w = 420 if expanded else 220
+            h = 290 if expanded else 38
+            x = (screen_w - w) // 2
+            ctypes.windll.user32.SetWindowPos(hwnd, -1, x, 0, w, h, 0x0040 | 0x0010)
+    except Exception:
+        pass
+    return {"status": "ok", "expanded": expanded}
+
+@app.post("/tray/exit")
+async def exit_app_route():
+    global _exit_app_event
+    _exit_app_event = True
+    return {"status": "ok", "action": "exit_requested"}
+
 @app.post("/overlay/interactive")
 async def set_overlay_interactive_route(payload: dict):
     global _overlay_is_interactive
@@ -370,7 +398,9 @@ async def set_overlay_interactive_route(payload: dict):
     _overlay_is_interactive = interactive
     try:
         import ctypes
-        hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Voice Overlay")
+        hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Notch")
+        if not hwnd:
+            hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Voice Overlay")
         if hwnd:
             GWL_EXSTYLE = -20
             WS_EX_TRANSPARENT = 0x00000020
@@ -386,15 +416,21 @@ async def set_overlay_interactive_route(payload: dict):
 
 @app.get("/tray/events")
 async def check_tray_events():
-    global _restore_window_event, _toggle_overlay_event
+    global _restore_window_event, _toggle_overlay_event, _notch_expanded_event, _exit_app_event
     should_restore = _restore_window_event
     should_toggle = _toggle_overlay_event
+    expanded = _notch_expanded_event
+    should_exit = _exit_app_event
     _restore_window_event = False
     _toggle_overlay_event = False
+    _notch_expanded_event = None
+    _exit_app_event = False
     return {
         "should_restore": should_restore,
         "should_toggle_overlay": should_toggle,
-        "overlay_interactive": _overlay_is_interactive
+        "overlay_interactive": _overlay_is_interactive,
+        "notch_expanded": expanded,
+        "should_exit": should_exit
     }
 
 # ==================== STATIC DASHBOARD ASSETS ====================

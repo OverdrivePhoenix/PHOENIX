@@ -1,20 +1,15 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 @layer base {
-  html, body {
+  html, body, #root {
+    background: transparent !important;
+    background-color: transparent !important;
     margin: 0;
     padding: 0;
     height: 100%;
     width: 100%;
-    background-color: #0c0e11;
     color: #e2e2e6;
     overflow: hidden;
-  }
-
-  html.overlay-transparent,
-  body.overlay-transparent {
-    background: transparent !important;
-    background-color: transparent !important;
   }
 }
 
