@@ -252,6 +252,73 @@ async def test_tts_audio(tone: str = Query("calm_concise")):
         headers={"Content-Disposition": "inline; filename=test.mp3"}
     )
 
+# ==================== VOICE-GENERATOR.COM COMPATIBLE API ====================
+
+@app.get("/api/tts/voice-generator/voices")
+async def get_voice_generator_voices():
+    """Returns categorized voice catalog modeled after voice-generator.com."""
+    edge_p = tts_manager.providers.get("edge_tts")
+    voices = edge_p.get_voices() if edge_p else []
+    return {
+        "status": "ok",
+        "service": "voice-generator-compatible-engine",
+        "default_voice": tts_manager.active_voice_id or "en-GB-RyanNeural",
+        "default_speed": 1.0,
+        "default_pitch": 0,
+        "default_volume": 100,
+        "voices": [
+            {
+                "id": v.id,
+                "name": v.name,
+                "gender": v.gender,
+                "language": v.language,
+                "description": v.description,
+                "recommended_for_tone": v.recommended_for_tone
+            }
+            for v in voices
+        ]
+    }
+
+@app.post("/api/tts/voice-generator/preview")
+async def preview_voice_generator_synthesis(payload: dict):
+    """
+    Synthesizes speech with custom voice, speed (0.5x - 2.0x), pitch (-50Hz to +50Hz),
+    volume (0 - 100%), and style tone modeled after voice-generator.com.
+    """
+    text = payload.get("text", "System online, Sir. Engineering fleet ready for deployment.")
+    voice_id = payload.get("voice_id", "en-GB-RyanNeural")
+    speed = float(payload.get("speed", 1.0))
+    pitch = int(payload.get("pitch", 0))
+    volume = int(payload.get("volume", 100))
+    tone = payload.get("tone", "calm_concise")
+
+    res = await tts_manager.synthesize_custom(
+        text=text,
+        voice_id=voice_id,
+        speed=speed,
+        pitch=pitch,
+        volume=volume,
+        tone=tone
+    )
+
+    return StreamingResponse(
+        io.BytesIO(res.audio_bytes),
+        media_type="audio/mpeg",
+        headers={
+            "X-TTS-Provider": res.provider,
+            "X-TTS-Voice": res.voice,
+            "Content-Disposition": "inline; filename=voice-generator-preview.mp3"
+        }
+    )
+
+@app.post("/api/tts/voice-generator/save")
+async def save_voice_generator_settings(payload: dict):
+    voice_id = payload.get("voice_id")
+    tone = payload.get("tone")
+    if voice_id:
+        tts_manager.set_active_config("edge_tts", voice_id=voice_id, tone=tone)
+    return {"status": "ok", "saved_voice_id": voice_id, "saved_tone": tone}
+
 # ==================== J.A.R.V.I.S. BUTLER ====================
 
 @app.get("/jarvis/tones")

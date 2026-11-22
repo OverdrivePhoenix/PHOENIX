@@ -87,10 +87,20 @@ class EdgeTTSProvider(BaseTTSProvider):
     VOICES = [
         VoiceInfo("en-GB-RyanNeural", "Ryan (British Butler / J.A.R.V.I.S.)", "Male", "en-GB", "Warm, composed British butler cadence, refined and articulate.", "calm_concise"),
         VoiceInfo("en-GB-SoniaNeural", "Sonia (British Female)", "Female", "en-GB", "Clear, poised British professional voice.", "calm_concise"),
-        VoiceInfo("en-US-ChristopherNeural", "Christopher (US Senior Engineer)", "Male", "en-US", "Confident, natural collaborative male colleague.", "conversational"),
+        VoiceInfo("en-GB-LibbyNeural", "Libby (British Warm)", "Female", "en-GB", "Bright, natural, articulate British tone.", "conversational"),
+        VoiceInfo("en-GB-ThomasNeural", "Thomas (British Classic)", "Male", "en-GB", "Deep, dignified narrative British cadence.", "calm_concise"),
         VoiceInfo("en-US-JennyNeural", "Jenny (US Conversational)", "Female", "en-US", "Warm, expressive, natural human conversational voice.", "conversational"),
+        VoiceInfo("en-US-ChristopherNeural", "Christopher (US Senior Engineer)", "Male", "en-US", "Confident, natural collaborative male colleague.", "conversational"),
         VoiceInfo("en-US-GuyNeural", "Guy (US Relaxed)", "Male", "en-US", "Casual, natural engineer tone.", "conversational"),
         VoiceInfo("en-US-AriaNeural", "Aria (US Executive)", "Female", "en-US", "Direct, clear, executive briefing tempo.", "direct"),
+        VoiceInfo("en-US-EricNeural", "Eric (US Neutral)", "Male", "en-US", "Balanced, calm engineering lead voice.", "calm_concise"),
+        VoiceInfo("en-US-MichelleNeural", "Michelle (US Warm)", "Female", "en-US", "Engaging, pleasant collaborator voice.", "conversational"),
+        VoiceInfo("en-AU-NatashaNeural", "Natasha (Australian Warm)", "Female", "en-AU", "Friendly, crisp Australian colleague.", "conversational"),
+        VoiceInfo("en-AU-WilliamNeural", "William (Australian Male)", "Male", "en-AU", "Relaxed Australian engineer delivery.", "conversational"),
+        VoiceInfo("en-IN-NeerjaNeural", "Neerja (Indian English)", "Female", "en-IN", "Expressive, articulate Indian English voice.", "conversational"),
+        VoiceInfo("en-IN-PrabhatNeural", "Prabhat (Indian Male)", "Male", "en-IN", "Clear, poised Indian English professional.", "direct"),
+        VoiceInfo("en-CA-LiamNeural", "Liam (Canadian Modern)", "Male", "en-CA", "Crisp, modern Canadian tech tone.", "direct"),
+        VoiceInfo("en-CA-ClaraNeural", "Clara (Canadian Warm)", "Female", "en-CA", "Warm, articulate Canadian collaborator.", "conversational"),
     ]
 
     def is_available(self) -> bool:
@@ -102,6 +112,34 @@ class EdgeTTSProvider(BaseTTSProvider):
 
     def get_voices(self) -> List[VoiceInfo]:
         return self.VOICES
+
+    async def synthesize_custom(
+        self,
+        text: str,
+        voice_id: str = "en-GB-RyanNeural",
+        speed: float = 1.0,
+        pitch: int = 0,
+        volume: int = 100,
+        tone: str = "calm_concise"
+    ) -> bytes:
+        import edge_tts
+        clean = sanitize_speech_text(text)
+        if not clean:
+            clean = "System ready."
+
+        speed_pct = int(round((speed - 1.0) * 100))
+        rate_str = f"{speed_pct:+d}%"
+        pitch_str = f"{int(pitch):+d}Hz"
+        vol_pct = int(round(volume - 100))
+        vol_str = f"{vol_pct:+d}%"
+
+        selected_voice = voice_id or "en-GB-RyanNeural"
+        comm = edge_tts.Communicate(clean, voice=selected_voice, rate=rate_str, pitch=pitch_str, volume=vol_str)
+        chunks = []
+        async for chunk in comm.stream():
+            if chunk["type"] == "audio":
+                chunks.append(chunk["data"])
+        return b"".join(chunks)
 
     async def synthesize(self, text: str, voice_id: str, tone: str = "calm_concise") -> bytes:
         import edge_tts
@@ -463,6 +501,43 @@ class SwappableTTSManager:
                     clean_text=clean
                 )
             raise e
+
+    async def synthesize_custom(
+        self,
+        text: str,
+        voice_id: str = "en-GB-RyanNeural",
+        speed: float = 1.0,
+        pitch: int = 0,
+        volume: int = 100,
+        tone: str = "calm_concise",
+        provider_id: Optional[str] = None
+    ) -> VoiceSynthesisResult:
+        clean = sanitize_speech_text(text)
+        provider = self.providers.get(provider_id or self.active_provider_id) or self.providers["edge_tts"]
+
+        try:
+            if hasattr(provider, "synthesize_custom"):
+                audio = await provider.synthesize_custom(clean, voice_id, speed, pitch, volume, tone)
+            else:
+                audio = await provider.synthesize(clean, voice_id, tone)
+            return VoiceSynthesisResult(
+                audio_bytes=audio,
+                media_type="audio/mpeg",
+                provider=provider.provider_id,
+                voice=voice_id,
+                clean_text=clean
+            )
+        except Exception:
+            fallback = self.providers["edge_tts"]
+            audio = await fallback.synthesize_custom(clean, voice_id, speed, pitch, volume, tone)
+            return VoiceSynthesisResult(
+                audio_bytes=audio,
+                media_type="audio/mpeg",
+                provider="edge_tts_custom_fallback",
+                voice=voice_id,
+                clean_text=clean
+            )
+
 
 
 # Global instance

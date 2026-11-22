@@ -74,6 +74,15 @@ class NotchApi:
         toggle_notch_overlay()
         return True
 
+    def open_dashboard(self):
+        show_dashboard()
+        return True
+
+    def exit_app(self):
+        shutdown()
+        return True
+
+
 
 def speak_system_online():
     """Vocalizes 'System online, Sir.' via Windows SAPI / Edge-TTS."""
@@ -203,6 +212,30 @@ def start_local_node_server(port: int = 8001):
         log_debug(f"Local Node Server Exception: {e}\n{traceback.format_exc()}")
 
 
+def init_dpi_awareness():
+    """Configures Windows Per-Monitor DPI Awareness so notch stays pixel-perfect on scaled displays."""
+    try:
+        import ctypes
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)  # Per-Monitor DPI aware
+        except Exception:
+            ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
+
+def get_screen_metrics():
+    """Retrieves primary monitor resolution."""
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        screen_w = user32.GetSystemMetrics(0)
+        screen_h = user32.GetSystemMetrics(1)
+        return screen_w, screen_h
+    except Exception:
+        return 1920, 1080
+
+
 def set_notch_geometry(expanded: bool):
     """Dynamically resizes and centers the native notch overlay window at y = 0."""
     try:
@@ -212,16 +245,64 @@ def set_notch_geometry(expanded: bool):
             hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Voice Overlay")
         if hwnd:
             user32 = ctypes.windll.user32
-            screen_w = user32.GetSystemMetrics(0)
-            w = 420 if expanded else 220
-            h = 290 if expanded else 38
-            x = (screen_w - w) // 2
+            screen_w, _ = get_screen_metrics()
+            w = 460 if expanded else 220
+            h = 360 if expanded else 38
+            x = max(0, (screen_w - w) // 2)
             y = 0
             # HWND_TOPMOST = -1, SWP_SHOWWINDOW = 0x0040, SWP_NOACTIVATE = 0x0010
             user32.SetWindowPos(hwnd, -1, x, y, w, h, 0x0040 | 0x0010)
             log_debug(f"Notch geometry set: expanded={expanded}, at ({x}, {y}, {w}, {h})")
     except Exception as e:
         log_debug(f"Notch geometry error: {e}")
+
+
+def show_dashboard():
+    """Restores and presents the full command center dashboard window on demand."""
+    global main_window
+    try:
+        if main_window:
+            main_window.show()
+            main_window.restore()
+            import ctypes
+            hwnd = ctypes.windll.user32.FindWindowW(None, "Project PHOENIX // Autonomous AI Engineering Organization")
+            if hwnd:
+                ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                ctypes.windll.user32.SetForegroundWindow(hwnd)
+                log_debug("Full dashboard window displayed and brought to foreground.")
+    except Exception as e:
+        log_debug(f"Notice showing dashboard: {e}")
+
+
+def start_global_hotkey_listener():
+    """Listens for global Windows shortcut Ctrl+Shift+Space to toggle or summon Dynamic Island."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        MOD_CONTROL = 0x0002
+        MOD_SHIFT = 0x0004
+        MOD_NOREPEAT = 0x4000
+        VK_SPACE = 0x20
+        HOTKEY_ID = 101
+
+        reg = user32.RegisterHotKey(None, HOTKEY_ID, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_SPACE)
+        if reg:
+            log_debug("Registered global hotkey Ctrl+Shift+Space for Dynamic Island.")
+        else:
+            log_debug("Notice: Could not register Ctrl+Shift+Space (may be reserved by another app).")
+
+        msg = wintypes.MSG()
+        while not is_quitting:
+            if user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):
+                if msg.message == 0x0312 and msg.wParam == HOTKEY_ID:
+                    log_debug("Global hotkey Ctrl+Shift+Space triggered.")
+                    toggle_notch_overlay()
+                user32.TranslateMessage(ctypes.byref(msg))
+                user32.DispatchMessageW(ctypes.byref(msg))
+            time.sleep(0.05)
+    except Exception as e:
+        log_debug(f"Global hotkey listener notice: {e}")
 
 
 def configure_voice_overlay_window(expanded: bool = False):
@@ -348,12 +429,13 @@ def init_system_tray(main_win, overlay_win):
             image = Image.new("RGBA", (64, 64), color=(59, 130, 246, 255))
 
         def on_open_command_center(icon, item):
-            if main_win:
-                main_win.show()
-                main_win.restore()
+            show_dashboard()
 
         def on_toggle_notch(icon, item):
             toggle_notch_overlay()
+
+        def on_expand_voice(icon, item):
+            set_notch_geometry(True)
 
         def on_toggle_pause(icon, item):
             try:
@@ -370,8 +452,9 @@ def init_system_tray(main_win, overlay_win):
             shutdown()
 
         menu = pystray.Menu(
-            pystray.MenuItem("Command Center", on_open_command_center, default=True),
-            pystray.MenuItem("Hide Notch" if notch_visible else "Show Notch", on_toggle_notch),
+            pystray.MenuItem("Show Dynamic Island" if not notch_visible else "Hide Dynamic Island", on_toggle_notch),
+            pystray.MenuItem("Toggle Voice / Expand Island", on_expand_voice),
+            pystray.MenuItem("Open Dashboard / Full Controls", on_open_command_center),
             pystray.MenuItem("Emergency Pause", on_toggle_pause),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Exit PHOENIX", on_exit_app)
@@ -380,7 +463,7 @@ def init_system_tray(main_win, overlay_win):
         tray_icon = pystray.Icon(
             name="PHOENIX",
             icon=image,
-            title="Project PHOENIX // Autonomous AI Organization",
+            title="Project PHOENIX // Dynamic Island Overlay",
             menu=menu
         )
         tray_thread = threading.Thread(target=tray_icon.run, daemon=True)
@@ -391,19 +474,11 @@ def init_system_tray(main_win, overlay_win):
 
 
 def on_window_ready(window):
-    """Callback fired when the native WebView2 windows are displayed."""
-    log_debug("Window displayed. Configuring notch geometry flush at top-center...")
+    """Callback fired when the Dynamic Island overlay window is displayed."""
+    log_debug("Dynamic Island displayed. Configuring notch geometry flush at top-center...")
     try:
         window.restore()
         window.show()
-    except Exception:
-        pass
-    try:
-        import ctypes
-        hwnd = ctypes.windll.user32.FindWindowW(None, "Project PHOENIX // Autonomous AI Engineering Organization")
-        if hwnd:
-            ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
-            ctypes.windll.user32.SetForegroundWindow(hwnd)
     except Exception:
         pass
 
@@ -428,6 +503,9 @@ def on_window_ready(window):
 def main():
     global main_window, voice_overlay_window
     log_debug("========== PHOENIX DESKTOP LAUNCHER START ==========")
+
+    # Initialize Per-Monitor DPI awareness
+    init_dpi_awareness()
 
     # 1. Immediately vocalize activation: "System online, Sir."
     speak_system_online()
@@ -457,9 +535,7 @@ def main():
     overlay_url = "http://127.0.0.1:8000/#voice-overlay"
 
     # 5. Compute primary screen top-center position for the notch pill
-    import ctypes
-    user32 = ctypes.windll.user32
-    screen_w = user32.GetSystemMetrics(0)
+    screen_w, _ = get_screen_metrics()
     init_pill_w = 220
     init_pill_h = 38
     init_pill_x = max(0, (screen_w - init_pill_w) // 2)
@@ -468,6 +544,7 @@ def main():
     # 6. Launch Native Desktop Windows using pywebview (Edge WebView2)
     import webview
 
+    # Full dashboard is created HIDDEN on initial launch (only opens on-demand from tray/island)
     main_window = webview.create_window(
         title="Project PHOENIX // Autonomous AI Engineering Organization",
         url=target_url,
@@ -476,10 +553,12 @@ def main():
         min_size=(1080, 680),
         background_color="#0D0F12",
         text_select=True,
-        zoomable=True
+        zoomable=True,
+        hidden=True
     )
 
     notch_api = NotchApi()
+    # Dynamic Island overlay window is the ONLY visible window at launch
     voice_overlay_window = webview.create_window(
         title="PHOENIX Notch",
         url=overlay_url,
@@ -500,21 +579,29 @@ def main():
     )
 
     # 7. Wire window events
-    def on_main_closed():
-        log_debug("Main window closed by user.")
+    def on_dashboard_closed():
+        log_debug("Dashboard closed by user. Keeping Dynamic Island active.")
+        if main_window:
+            try:
+                main_window.hide()
+            except Exception:
+                pass
+
+    def on_notch_closed():
+        log_debug("Dynamic Island overlay closed. Shutting down PHOENIX.")
         shutdown()
 
-    main_window.events.closed += on_main_closed
-    voice_overlay_window.events.closed += on_main_closed
+    voice_overlay_window.events.closed += on_notch_closed
 
-    # 8. Initialize System Tray & IPC Listener
+    # 8. Initialize System Tray, Global Hotkey & IPC Listener
     init_system_tray(main_window, voice_overlay_window)
     threading.Thread(target=start_tray_ipc_listener, args=(main_window, voice_overlay_window), daemon=True).start()
+    threading.Thread(target=start_global_hotkey_listener, daemon=True).start()
 
-    # 9. Start pywebview event loop (blocks until window is closed)
+    # 9. Start pywebview event loop with Dynamic Island as primary window
     try:
-        log_debug("Starting webview event loop...")
-        webview.start(on_window_ready, main_window, debug=False, http_server=False)
+        log_debug("Starting webview event loop with Dynamic Island as primary...")
+        webview.start(on_window_ready, voice_overlay_window, debug=False, http_server=False)
     finally:
         shutdown()
         log_debug("========== PHOENIX DESKTOP LAUNCHER EXIT ==========")
