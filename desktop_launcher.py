@@ -237,7 +237,7 @@ def get_screen_metrics():
 
 
 def set_notch_geometry(expanded: bool):
-    """Dynamically resizes and centers the native notch overlay window at y = 0."""
+    """Dynamically resizes and centers the native notch overlay window at y = 0 with breathing margin."""
     try:
         import ctypes
         from ctypes import wintypes, c_int, c_void_p
@@ -250,8 +250,9 @@ def set_notch_geometry(expanded: bool):
             user32.SetWindowPos.restype = wintypes.BOOL
 
             screen_w, _ = get_screen_metrics()
-            w = 480 if expanded else 280
-            h = 400 if expanded else 38
+            # 500x420 expanded, 300x56 collapsed gives 8-10px transparent breathing margin around the island
+            w = 500 if expanded else 300
+            h = 420 if expanded else 56
             x = max(0, (screen_w - w) // 2)
             y = 0
 
@@ -570,8 +571,8 @@ def main():
 
     # 5. Compute primary screen top-center position for the notch pill
     screen_w, _ = get_screen_metrics()
-    init_pill_w = 280
-    init_pill_h = 38
+    init_pill_w = 300
+    init_pill_h = 56
     init_pill_x = max(0, (screen_w - init_pill_w) // 2)
     init_pill_y = 0
 

@@ -120,6 +120,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
   const animationFrameRef = useRef<number | null>(null);
   const recognitionRef = useRef<any>(null);
   const activeAudioElementRef = useRef<HTMLAudioElement | null>(null);
+  const collapseTimerRef = useRef<any>(null);
 
   // Synchronize OS window resize with expanded state
   const notifyNativeResize = async (expanded: boolean) => {
@@ -136,10 +137,27 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
     } catch {}
   };
 
-  const handleToggleExpand = (expanded: boolean) => {
-    setIsExpanded(expanded);
-    if (!expanded) setShowVoiceSettings(false);
-    notifyNativeResize(expanded);
+  const handleToggleExpand = (nextExpanded: boolean) => {
+    if (collapseTimerRef.current) {
+      clearTimeout(collapseTimerRef.current);
+      collapseTimerRef.current = null;
+    }
+
+    if (nextExpanded) {
+      // 1. Instantly expand the native OS window canvas to accommodate the expanded island
+      notifyNativeResize(true);
+      // 2. Animate CSS island element smoothly outward
+      setIsExpanded(true);
+    } else {
+      // 1. Animate CSS island element smoothly back to pill size
+      setIsExpanded(false);
+      setShowVoiceSettings(false);
+      // 2. Wait 340ms (CSS transition is 320ms) for visual collapse to cleanly complete
+      collapseTimerRef.current = setTimeout(() => {
+        // 3. Shrink native OS window bounds only after animation finishes
+        notifyNativeResize(false);
+      }, 340);
+    }
   };
 
   // Shrink native window on mount to exact pill size
@@ -577,8 +595,10 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
         if (isExpanded) handleToggleExpand(false);
         setShowContextMenu(null);
       }}
-      className="w-full h-full flex flex-col items-center justify-start overflow-hidden select-none relative pt-0 bg-transparent font-sans"
-      style={{ background: 'transparent', backgroundColor: 'transparent', margin: 0, padding: 0 }}
+      className={`w-full h-full flex flex-col items-center justify-start overflow-hidden select-none relative p-2 bg-transparent font-sans ${
+        isExpanded ? 'pointer-events-auto' : 'pointer-events-none'
+      }`}
+      style={{ background: 'transparent', backgroundColor: 'transparent', margin: 0 }}
     >
       {/* ================= APPLE IPHONE DYNAMIC ISLAND CAPSULE ================= */}
       <div
@@ -592,15 +612,23 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
         }}
         onContextMenu={handleContextMenu}
         style={{
-          backgroundColor: '#000000',
+          width: isExpanded ? '480px' : '280px',
+          height: isExpanded ? '400px' : '38px',
+          borderRadius: isExpanded ? '24px' : '9999px',
+          background: 'rgba(12, 15, 20, 0.72)',
+          backdropFilter: 'blur(22px) saturate(160%)',
+          WebkitBackdropFilter: 'blur(22px) saturate(160%)',
+          border: '1px solid rgba(255, 255, 255, 0.12)',
           boxShadow: isExpanded
-            ? '0 20px 48px rgba(0,0,0,0.92), 0 0 0 1px rgba(255,255,255,0.08)'
-            : '0 6px 16px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.08)'
+            ? '0 24px 64px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.08) inset'
+            : '0 8px 32px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.08) inset',
+          transition: 'all 320ms cubic-bezier(0.22, 1, 0.36, 1)',
+          willChange: 'width, height, border-radius, box-shadow'
         }}
-        className={`w-full h-full text-white relative flex flex-col overflow-hidden cursor-pointer backdrop-blur-3xl transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+        className={`pointer-events-auto text-white relative flex flex-col overflow-hidden cursor-pointer select-none ${
           isExpanded
-            ? 'rounded-b-[28px] rounded-t-none px-6 pt-3.5 pb-5'
-            : 'rounded-b-[20px] rounded-t-none px-1 py-0 flex-row items-center justify-between'
+            ? 'rounded-[24px] px-6 pt-3.5 pb-5'
+            : 'rounded-full px-1 py-0 flex-row items-center justify-between'
         }`}
       >
         {/* Subtle interior ambient edge highlight */}
@@ -654,7 +682,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
                   energy={0.5}
                   level={audioLevel}
                   listening={!isSpeaking && !isMuted}
-                  glass={false}
+                  glass={true}
                   interactive={false}
                   scale={0.85}
                   opacity={0.95}
