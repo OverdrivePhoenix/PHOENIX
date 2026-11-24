@@ -437,29 +437,7 @@ async def resize_overlay_route(payload: dict):
     global _notch_expanded_event
     expanded = payload.get("expanded", False)
     _notch_expanded_event = expanded
-    try:
-        import ctypes
-        from ctypes import wintypes, c_int, c_void_p
-        hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Notch")
-        if not hwnd:
-            hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Voice Overlay")
-        if hwnd:
-            user32 = ctypes.windll.user32
-            user32.SetWindowPos.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int, wintypes.UINT]
-            user32.SetWindowPos.restype = wintypes.BOOL
-            screen_w = user32.GetSystemMetrics(0)
-            # Expanded 580x540 gives generous buffer so bottom dock buttons never clip
-            # Collapsed 280x52 fits sleek Apple pill with soft shadow
-            w = 580 if expanded else 280
-            h = 540 if expanded else 52
-            x = max(0, (screen_w - w) // 2)
-            y = 0
-            HWND_TOPMOST = c_void_p(-1)
-            SWP_SHOWWINDOW = 0x0040
-            SWP_NOACTIVATE = 0x0010
-            user32.SetWindowPos(hwnd, HWND_TOPMOST, x, y, w, h, SWP_SHOWWINDOW | SWP_NOACTIVATE)
-    except Exception:
-        pass
+    # The native OS window remains fixed-size and transparent; the pill animates purely in CSS inside.
     return {"status": "ok", "expanded": expanded}
 
 @app.post("/tray/exit")

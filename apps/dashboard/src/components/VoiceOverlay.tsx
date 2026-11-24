@@ -1,28 +1,35 @@
 import React, { useState, useEffect, useRef } from 'react';
 // @ts-ignore
 import Strands from './Strands';
-import { LiquidButton, MetalButton, Button } from './ui/liquid-glass-button';
+import { LiquidButton, MetalButton } from './ui/liquid-glass-button';
 import {
   Mic,
   MicOff,
   PhoneOff,
-  Sliders,
   Check,
   X,
   ChevronUp,
   ChevronLeft,
   Play,
-  Volume2,
-  Sparkles,
   LayoutDashboard,
-  EyeOff,
-  Power,
-  Radio,
-  SlidersHorizontal,
-  SquareCheck
+  SlidersHorizontal
 } from 'lucide-react';
 
 export type VoiceTone = 'calm_concise' | 'conversational' | 'direct';
+export type NotchState = 'idle' | 'hover' | 'voice' | 'approval' | 'settings';
+
+interface NotchDimensions {
+  width: number;
+  height: number;
+}
+
+const STATE_DIMENSIONS: Record<NotchState, NotchDimensions> = {
+  idle: { width: 200, height: 34 },
+  hover: { width: 320, height: 58 },
+  voice: { width: 460, height: 180 },
+  approval: { width: 500, height: 200 },
+  settings: { width: 520, height: 340 }
+};
 
 interface VoiceOption {
   id: string;
@@ -52,14 +59,15 @@ interface VoiceOverlayProps {
   onSendCommand?: (cmd: string, tone: VoiceTone) => Promise<{ intent: string; reply: string }>;
 }
 
-const STRANDS_COLORS = [
-  '#3B82F6',
-  '#60A5FA',
-  '#93C5FD',
-  '#F8FAFC',
-  '#38BDF8',
-  '#2563EB',
-  '#1E3A8A'
+// Dragheart Luard Cold Violet Palette for Strands WebGL2 Orb
+const STRANDS_LUARD_COLORS = [
+  '#8B5CF6',
+  '#A78BFA',
+  '#C4B5FD',
+  '#EDE9FE',
+  '#6D28D9',
+  '#4C1D95',
+  '#3B82F6'
 ];
 
 const DEFAULT_VOICES: VoiceOption[] = [
@@ -95,15 +103,16 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
   onDenyAction,
   onSendCommand
 }) => {
-  const [isExpanded, setIsExpanded] = useState<boolean>(false);
-  const [showVoiceSettings, setShowVoiceSettings] = useState<boolean>(false);
+  // State Machine: 'idle' | 'hover' | 'voice' | 'approval' | 'settings'
+  const [notchState, setNotchState] = useState<NotchState>(
+    pendingApproval ? 'approval' : 'idle'
+  );
   const [selectedTone, setSelectedTone] = useState<VoiceTone>('calm_concise');
   const [isListening, setIsListening] = useState<boolean>(true);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
   const [audioLevel, setAudioLevel] = useState<number>(0.04);
-  const [captionText, setCaptionText] = useState<string>('Listening for your command, Sir...');
-  const [showContextMenu, setShowContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [captionText, setCaptionText] = useState<string>('Ready for deployment.');
 
   // Voice Generator State
   const [voiceList, setVoiceList] = useState<VoiceOption[]>(DEFAULT_VOICES);
@@ -114,55 +123,66 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
   const [testSampleText, setTestSampleText] = useState<string>('System online, Sir. Engineering fleet ready for deployment.');
   const [isTestingVoice, setIsTestingVoice] = useState<boolean>(false);
 
+  const hoverLeaveTimerRef = useRef<any>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const recognitionRef = useRef<any>(null);
   const activeAudioElementRef = useRef<HTMLAudioElement | null>(null);
-  const collapseTimerRef = useRef<any>(null);
 
-  // Synchronize OS window resize with expanded state
-  const notifyNativeResize = async (expanded: boolean) => {
+  // Synchronize active hit rectangle with Python desktop launcher (0ms latency pass-through)
+  const updateHitRect = (state: NotchState) => {
+    const dim = STATE_DIMENSIONS[state];
+    const offset_x = Math.max(0, (540 - dim.width) / 2);
     try {
-      if ((window as any).pywebview?.api?.set_expanded) {
-        await (window as any).pywebview.api.set_expanded(expanded);
-      } else {
-        await fetch(`${API_BASE}/overlay/resize`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ expanded })
-        });
+      if ((window as any).pywebview?.api?.set_hit_rect) {
+        (window as any).pywebview.api.set_hit_rect(offset_x, 0, dim.width, dim.height);
       }
     } catch {}
   };
 
-  const handleToggleExpand = (nextExpanded: boolean) => {
-    if (collapseTimerRef.current) {
-      clearTimeout(collapseTimerRef.current);
-      collapseTimerRef.current = null;
+  const transitionTo = (nextState: NotchState) => {
+    if (hoverLeaveTimerRef.current) {
+      clearTimeout(hoverLeaveTimerRef.current);
+      hoverLeaveTimerRef.current = null;
     }
-
-    if (nextExpanded) {
-      // 1. Instantly expand the native OS window canvas to accommodate the expanded island
-      notifyNativeResize(true);
-      // 2. Animate CSS island element smoothly outward
-      setIsExpanded(true);
-    } else {
-      // 1. Animate CSS island element smoothly back to pill size
-      setIsExpanded(false);
-      setShowVoiceSettings(false);
-      // 2. Wait 340ms (CSS transition is 320ms) for visual collapse to cleanly complete
-      collapseTimerRef.current = setTimeout(() => {
-        // 3. Shrink native OS window bounds only after animation finishes
-        notifyNativeResize(false);
-      }, 340);
-    }
+    setNotchState(nextState);
+    updateHitRect(nextState);
   };
 
-  // Shrink native window on mount to exact pill size
+  // Sync initial hit rect on mount
   useEffect(() => {
-    notifyNativeResize(false);
+    updateHitRect(notchState);
+  }, []);
+
+  // React to incoming approvals
+  const isMountedRef = useRef(false);
+  useEffect(() => {
+    if (!isMountedRef.current) {
+      isMountedRef.current = true;
+      if (pendingApproval) transitionTo('approval');
+      return;
+    }
+    if (pendingApproval) {
+      transitionTo('approval');
+      setCaptionText(`Gate #${pendingApproval.id.slice(-4)}: ${pendingApproval.action}`);
+    } else if (notchState === 'approval') {
+      transitionTo('idle');
+    }
+  }, [pendingApproval?.id]);
+
+  // Keyboard dismissal (Escape returns to idle)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        transitionTo('idle');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
   // Load configured voices from Voice-Generator backend
@@ -178,35 +198,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
       .catch(() => {});
   }, []);
 
-  // Auto-expand only when a NEW approval arrives after initial mount
-  const isMountedRef = useRef(false);
-  useEffect(() => {
-    if (!isMountedRef.current) {
-      isMountedRef.current = true;
-      return;
-    }
-    if (pendingApproval) {
-      handleToggleExpand(true);
-      setCaptionText(`Approval required: ${pendingApproval.action}`);
-    }
-  }, [pendingApproval?.id]);
-
-  // Keyboard & outside click collapse listener (Escape key)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        handleToggleExpand(false);
-        setShowContextMenu(null);
-        setShowVoiceSettings(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isExpanded]);
-
-  // Initialize Microphone & Web Audio Analyser
+  // Audio Analyser Setup
   useEffect(() => {
     let cancelled = false;
 
@@ -239,9 +231,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
           if (cancelled) return;
           analyser.getByteFrequencyData(dataArray);
           let sum = 0;
-          for (let i = 0; i < dataArray.length; i++) {
-            sum += dataArray[i];
-          }
+          for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
           const avg = sum / (dataArray.length * 255);
           setAudioLevel((prev) => {
             const target = Math.max(0.04, Math.min(1.0, avg * 2.2));
@@ -250,86 +240,28 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
           animationFrameRef.current = requestAnimationFrame(updateLevel);
         };
         animationFrameRef.current = requestAnimationFrame(updateLevel);
-      } catch (err) {
-        console.warn('Microphone analyser notice:', err);
-      }
+      } catch {}
     };
 
     initAudio();
 
-    // Setup Web Speech Recognition
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      try {
-        const recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = 'en-US';
-
-        recognition.onresult = (event: any) => {
-          let interimTranscript = '';
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-              const finalTranscript = event.results[i][0].transcript.trim();
-              if (finalTranscript) {
-                handleUserUtterance(finalTranscript);
-              }
-            } else {
-              interimTranscript += event.results[i][0].transcript;
-            }
-          }
-          if (interimTranscript) {
-            setCaptionText(interimTranscript);
-          }
-        };
-
-        recognition.onerror = (e: any) => {
-          if (e.error !== 'no-speech') {
-            console.warn('SpeechRecognition notice:', e.error);
-          }
-        };
-
-        recognition.start();
-        recognitionRef.current = recognition;
-      } catch (e) {
-        console.warn('SpeechRecognition notice:', e);
-      }
-    }
-
     return () => {
       cancelled = true;
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-      }
-      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-        audioContextRef.current.close().catch(() => {});
-      }
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch {}
-      }
-      if (activeAudioElementRef.current) {
-        activeAudioElementRef.current.pause();
-      }
+      if (mediaStreamRef.current) mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') audioContextRef.current.close().catch(() => {});
     };
   }, []);
 
-  // Voice-Generator Preview & Playback
-  const handlePreviewVoice = async (customText?: string) => {
-    const textToSpeak = customText || testSampleText;
+  const handlePreviewVoice = async () => {
     setIsTestingVoice(true);
     setIsSpeaking(true);
-    setIsListening(false);
-    setCaptionText(textToSpeak);
-
     try {
       const resp = await fetch(`${API_BASE}/api/tts/voice-generator/preview`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          text: textToSpeak,
+          text: testSampleText,
           voice_id: selectedVoiceId,
           speed: speechSpeed,
           pitch: speechPitch,
@@ -337,39 +269,20 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
           tone: selectedTone
         })
       });
-
       if (resp.ok) {
-        const audioBlob = await resp.blob();
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const audio = new Audio(audioUrl);
+        const blob = await resp.blob();
+        const audio = new Audio(URL.createObjectURL(blob));
         activeAudioElementRef.current = audio;
-
-        if (audioContextRef.current && analyserRef.current) {
-          try {
-            const audioSource = audioContextRef.current.createMediaElementSource(audio);
-            audioSource.connect(analyserRef.current);
-            analyserRef.current.connect(audioContextRef.current.destination);
-          } catch {}
-        }
-
         audio.onended = () => {
           setIsSpeaking(false);
           setIsTestingVoice(false);
-          setIsListening(true);
-          setAudioLevel(0.04);
-          setCaptionText('Listening for your command, Sir...');
         };
-
-        audio.onerror = () => {
-          fallbackBrowserSpeech(textToSpeak, selectedTone);
-        };
-
         await audio.play();
-        return;
       }
-    } catch {}
-
-    fallbackBrowserSpeech(textToSpeak, selectedTone);
+    } catch {
+      setIsSpeaking(false);
+      setIsTestingVoice(false);
+    }
   };
 
   const handleSaveVoiceConfig = async () => {
@@ -382,295 +295,150 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
           tone: selectedTone
         })
       });
-      setShowVoiceSettings(false);
-      setCaptionText('Voice profile saved.');
+      transitionTo('voice');
     } catch {
-      setShowVoiceSettings(false);
+      transitionTo('voice');
     }
   };
 
-  // Speak using swappable backend TTS provider
-  const speakWithActiveProvider = async (rawText: string, tone: VoiceTone = selectedTone) => {
-    setIsSpeaking(true);
-    setIsListening(false);
-    setCaptionText(rawText);
-
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch {}
-    }
-
-    try {
-      const response = await fetch(`${API_BASE}/api/tts/voice-generator/preview`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: rawText,
-          voice_id: selectedVoiceId,
-          speed: speechSpeed,
-          pitch: speechPitch,
-          volume: speechVolume,
-          tone: tone
-        })
-      });
-
-      if (response.ok && response.headers.get('content-type')?.includes('audio')) {
-        const audioBlob = await response.blob();
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const audio = new Audio(audioUrl);
-        activeAudioElementRef.current = audio;
-
-        if (audioContextRef.current && analyserRef.current) {
-          try {
-            const audioSource = audioContextRef.current.createMediaElementSource(audio);
-            audioSource.connect(analyserRef.current);
-            analyserRef.current.connect(audioContextRef.current.destination);
-          } catch {}
-        }
-
-        audio.onended = () => {
-          setIsSpeaking(false);
-          setIsListening(true);
-          setAudioLevel(0.04);
-          setCaptionText('Listening for your command, Sir...');
-          if (recognitionRef.current && !isMuted) {
-            try {
-              recognitionRef.current.start();
-            } catch {}
-          }
-        };
-
-        audio.onerror = () => {
-          fallbackBrowserSpeech(rawText, tone);
-        };
-
-        await audio.play();
-        return;
-      }
-    } catch {}
-
-    fallbackBrowserSpeech(rawText, tone);
+  const toggleMute = () => {
+    setIsMuted(!isMuted);
   };
 
-  const fallbackBrowserSpeech = (text: string, tone: VoiceTone) => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.pitch = tone === 'calm_concise' ? 0.95 : 1.0;
-      utterance.rate = speechSpeed || 1.0;
-
-      const voices = window.speechSynthesis.getVoices();
-      const voice = voices.find(
-        (v) =>
-          v.name.toLowerCase().includes('natural') ||
-          v.name.toLowerCase().includes('ryan') ||
-          v.name.toLowerCase().includes('george') ||
-          v.name.toLowerCase().includes('daniel') ||
-          v.lang.startsWith('en')
-      );
-      if (voice) utterance.voice = voice;
-
-      utterance.onend = () => {
-        setIsSpeaking(false);
-        setIsTestingVoice(false);
-        setIsListening(true);
-        setAudioLevel(0.04);
-        setCaptionText('Listening for your command...');
-        if (recognitionRef.current && !isMuted) {
-          try {
-            recognitionRef.current.start();
-          } catch {}
-        }
-      };
-
-      utterance.onerror = () => {
-        setIsSpeaking(false);
-        setIsTestingVoice(false);
-        setIsListening(true);
-      };
-
-      window.speechSynthesis.speak(utterance);
-    } else {
-      setIsSpeaking(false);
-      setIsTestingVoice(false);
-      setIsListening(true);
-    }
-  };
-
-  const handleUserUtterance = async (speechText: string) => {
-    if (!speechText.trim()) return;
-
-    handleToggleExpand(true);
-    setCaptionText(`"${speechText}"`);
-    setIsListening(false);
-
-    try {
-      let replyText =
-        selectedTone === 'conversational'
-          ? "Got it! Relaying that directive to our autonomous fleet now."
-          : selectedTone === 'direct'
-          ? "Command acknowledged. Executing."
-          : "Very well, Sir. I have relayed your directive to the orchestrator.";
-
-      if (onSendCommand) {
-        const res = await onSendCommand(speechText, selectedTone);
-        if (res?.reply) replyText = res.reply;
-      } else {
-        const res = await fetch(`${API_BASE}/jarvis/command`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ transcript: speechText, tone: selectedTone })
-        }).then((r) => r.json());
-        if (res?.spoken_reply) replyText = res.spoken_reply;
-      }
-
-      await speakWithActiveProvider(replyText, selectedTone);
-    } catch {
-      const errReply = "My apologies, Sir. A communication delay occurred. Standing by.";
-      await speakWithActiveProvider(errReply, selectedTone);
-    }
-  };
-
-  const toggleMute = (e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    const nextMuted = !isMuted;
-    setIsMuted(nextMuted);
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getAudioTracks().forEach((track) => {
-        track.enabled = !nextMuted;
-      });
-    }
-    if (nextMuted) {
-      setAudioLevel(0);
-      setIsListening(false);
-      setCaptionText('Microphone muted.');
-    } else {
-      setIsListening(!isSpeaking);
-      setCaptionText('Listening for your command, Sir...');
-    }
-  };
-
-  const handleEndSession = (e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    if (activeAudioElementRef.current) {
-      activeAudioElementRef.current.pause();
-    }
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
-    setIsSpeaking(false);
-    setIsListening(true);
-    setCaptionText('Listening for your command, Sir...');
-    handleToggleExpand(false);
-  };
-
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
+  const handleOpenDashboard = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setShowContextMenu({ x: e.clientX, y: e.clientY });
-  };
-
-  const handleRestoreFullApp = (e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    setShowContextMenu(null);
-    if ((window as any).pywebview?.api?.open_dashboard) {
-      (window as any).pywebview.api.open_dashboard();
-    } else if (onOpenCommandCenter) {
+    if (onOpenCommandCenter) {
       onOpenCommandCenter();
     } else {
       fetch(`${API_BASE}/tray/restore-window`, { method: 'POST' }).catch(() => {});
     }
   };
 
-  const currentVoiceObj = voiceList.find((v) => v.id === selectedVoiceId) || voiceList[0];
+  // Hover management with ~120ms debounce
+  const handlePillMouseEnter = () => {
+    if (hoverLeaveTimerRef.current) {
+      clearTimeout(hoverLeaveTimerRef.current);
+      hoverLeaveTimerRef.current = null;
+    }
+    if (notchState === 'idle') {
+      transitionTo('hover');
+    }
+  };
+
+  const handlePillMouseLeave = () => {
+    if (notchState === 'hover') {
+      hoverLeaveTimerRef.current = setTimeout(() => {
+        transitionTo('idle');
+      }, 120);
+    }
+  };
+
+  const handlePillClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (notchState === 'idle' || notchState === 'hover') {
+      transitionTo(pendingApproval ? 'approval' : 'voice');
+    }
+  };
+
+  const currentDim = STATE_DIMENSIONS[notchState];
+  const isExpanded = notchState !== 'idle';
 
   return (
     <div
       onClick={() => {
-        if (isExpanded) handleToggleExpand(false);
-        setShowContextMenu(null);
+        if (notchState !== 'idle') transitionTo('idle');
       }}
-      className={`w-full h-full flex flex-col items-center justify-start overflow-hidden select-none relative p-2 bg-transparent font-sans ${
-        isExpanded ? 'pointer-events-auto' : 'pointer-events-none'
-      }`}
-      style={{ background: 'transparent', backgroundColor: 'transparent', margin: 0 }}
+      className="w-full h-full flex flex-col items-center justify-start overflow-hidden select-none relative bg-transparent font-sans"
+      style={{ background: 'transparent', backgroundColor: 'transparent', margin: 0, padding: 0 }}
     >
-      {/* ================= APPLE IPHONE DYNAMIC ISLAND CAPSULE ================= */}
+      {/* Dynamic Notch / Island Capsule */}
       <div
-        onClick={(e) => {
-          e.stopPropagation();
-          setShowContextMenu(null);
-          if (!isExpanded) handleToggleExpand(true);
-        }}
-        onContextMenu={handleContextMenu}
+        onClick={handlePillClick}
+        onMouseEnter={handlePillMouseEnter}
+        onMouseLeave={handlePillMouseLeave}
         style={{
-          width: isExpanded ? '540px' : '260px',
-          height: isExpanded ? '460px' : '38px',
-          borderRadius: isExpanded ? '26px' : '9999px',
-          background: '#0D0F12',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
+          width: `${currentDim.width}px`,
+          height: `${currentDim.height}px`,
+          borderRadius: notchState === 'idle' ? '0 0 16px 16px' : '0 0 22px 22px',
+          background: '#0B0C0E',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          borderTop: 'none',
           boxShadow: isExpanded
-            ? '0 24px 60px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.1)'
-            : '0 8px 24px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.08)',
-          transition: 'all 320ms cubic-bezier(0.16, 1, 0.3, 1)',
-          willChange: 'width, height, border-radius, box-shadow'
+            ? '0 16px 40px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.08)'
+            : '0 4px 16px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
+          transition: 'all 280ms cubic-bezier(0.16, 1, 0.3, 1)',
+          willChange: 'width, height, border-radius'
         }}
-        className={`pointer-events-auto text-white relative flex flex-col overflow-hidden cursor-pointer select-none ${
-          isExpanded
-            ? 'px-5 py-4'
-            : 'px-3.5 py-0 flex-row items-center justify-between'
-        }`}
+        className="pointer-events-auto text-white relative flex flex-col overflow-hidden cursor-pointer select-none"
       >
-        {/* Subtle interior ambient edge highlight */}
+        {/* Subtle interior hairline */}
         <div className="absolute inset-0 rounded-[inherit] pointer-events-none border border-white/[0.04]" />
 
-        {/* ================= 1. COLLAPSED STATE: SLEEK APPLE PILL ================= */}
-        {!isExpanded && (
+        {/* 1. IDLE STATE: Sleek Flush Bezel Pill (200 × 34 px) */}
+        {notchState === 'idle' && (
           <div className="w-full h-full flex items-center justify-between px-3.5 z-10 select-none whitespace-nowrap">
-            {/* Leading accessory: Glowing Indicator + Agent Badge */}
-            <div className="flex items-center space-x-2.5 min-w-0">
-              <span className="relative flex h-2.5 w-2.5 shrink-0">
-                <span
-                  className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                    pendingApproval
-                      ? 'bg-amber-400'
-                      : isSpeaking
-                      ? 'bg-amber-400'
-                      : isEmergencyPaused
-                      ? 'bg-red-500'
-                      : isMuted
-                      ? 'bg-neutral-600'
-                      : 'bg-emerald-400'
-                  }`}
-                />
-                <span
-                  className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
-                    pendingApproval
-                      ? 'bg-amber-400'
-                      : isSpeaking
-                      ? 'bg-amber-400'
-                      : isEmergencyPaused
-                      ? 'bg-red-500'
-                      : isMuted
-                      ? 'bg-neutral-500'
-                      : 'bg-emerald-400'
-                  }`}
-                />
-              </span>
-              <span className="text-[12px] font-mono font-medium tracking-wide text-white/95 whitespace-nowrap truncate">
-                {pendingApproval ? 'GATE REQ' : isEmergencyPaused ? 'PAUSED' : (activeAgent || 'PHOENIX · SWE-03')}
+            <div className="flex items-center space-x-2 min-w-0">
+              <span
+                className={`w-2 h-2 rounded-full shrink-0 ${
+                  pendingApproval
+                    ? 'bg-amber-400 animate-pulse'
+                    : isSpeaking
+                    ? 'bg-violet-400 animate-pulse'
+                    : isEmergencyPaused
+                    ? 'bg-red-500'
+                    : isMuted
+                    ? 'bg-neutral-600'
+                    : 'bg-emerald-400'
+                }`}
+              />
+              <span className="text-[11px] font-mono tracking-wider text-white/90 truncate uppercase font-semibold">
+                {pendingApproval ? 'GATE' : (activeAgent || 'SWE-03')}
               </span>
             </div>
 
-            {/* Trailing accessory: Mini <Strands/> Audio Orb */}
-            <div className="flex items-center space-x-2 shrink-0 ml-2">
-              <div className="w-6 h-6 relative rounded-full overflow-hidden flex items-center justify-center bg-white/[0.06] border border-white/10 shadow-inner">
+            <div className="w-5 h-5 rounded-full overflow-hidden flex items-center justify-center shrink-0 ml-2 bg-black/40 border border-white/[0.08]">
+              <Strands
+                colors={STRANDS_LUARD_COLORS}
+                speed={0.8}
+                amplitude={0.9}
+                energy={0.5}
+                level={audioLevel}
+                listening={!isSpeaking && !isMuted}
+                glass={true}
+                interactive={false}
+                scale={0.8}
+                opacity={0.95}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* 2. HOVER STATE: Summary Preview (320 × 58 px) */}
+        {notchState === 'hover' && (
+          <div className="w-full h-full flex items-center justify-between px-4 z-10 select-none animate-fadeIn">
+            <div className="flex flex-col min-w-0 pr-2">
+              <div className="flex items-center space-x-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                <span className="text-xs font-mono font-bold tracking-tight text-white uppercase">
+                  {activeAgent}
+                </span>
+                <span className="text-[10px] font-mono text-white/40">· ACTIVE</span>
+              </div>
+              <span className="text-[11px] text-white/60 font-mono truncate mt-0.5">
+                {currentProjectName || 'Autonomous Fleet'}
+              </span>
+            </div>
+
+            <div className="flex items-center space-x-3 shrink-0">
+              <span className="text-xs font-mono text-emerald-400 font-semibold tabular-nums">
+                ${dailySpend.toFixed(2)}
+              </span>
+              <div className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center bg-black/40 border border-white/[0.08]">
                 <Strands
-                  colors={STRANDS_COLORS}
-                  speed={0.8}
-                  amplitude={0.9}
-                  energy={0.5}
+                  colors={STRANDS_LUARD_COLORS}
+                  speed={0.9}
+                  amplitude={1.0}
+                  energy={0.6}
                   level={audioLevel}
                   listening={!isSpeaking && !isMuted}
                   glass={true}
@@ -683,419 +451,300 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
           </div>
         )}
 
-        {/* ================= 2. EXPANDED STATE: IPHONE LIVE ACTIVITY EXPERIENCE ================= */}
-        {isExpanded && (
-          <div className="w-full h-full flex flex-col justify-between z-10 animate-fadeIn">
-            {/* ZONE 1: APPLE-STYLE HEADER BAR */}
-            <div className="w-full flex items-center justify-between pb-2 shrink-0 border-b border-white/[0.06]">
-              {/* Left Identity Group */}
-              <div className="flex items-center gap-2.5">
-                <span className="relative flex h-2.5 w-2.5 shrink-0">
-                  <span
-                    className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                      isSpeaking
-                        ? 'bg-amber-400'
-                        : isMuted
-                        ? 'bg-neutral-600'
-                        : 'bg-emerald-400'
-                    }`}
-                  />
-                  <span
-                    className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
-                      isSpeaking
-                        ? 'bg-amber-400'
-                        : isMuted
-                        ? 'bg-neutral-500'
-                        : 'bg-emerald-400'
-                    }`}
-                  />
-                </span>
-                <div className="flex flex-col">
-                  <span className="text-xs font-semibold tracking-tight text-white/95 leading-none">
-                    {activeAgent}
-                  </span>
-                  <span className="text-[10px] text-white/40 font-mono tracking-wider pt-0.5 leading-none">
-                    {isSpeaking ? 'SPEAKING' : isMuted ? 'MUTED' : 'AUTONOMOUS FLEET'}
-                  </span>
-                </div>
+        {/* 3. VOICE STATE: Acoustic Cockpit (460 × 180 px) */}
+        {notchState === 'voice' && (
+          <div className="w-full h-full flex flex-col justify-between p-3.5 z-10 animate-fadeIn">
+            {/* Top Bar */}
+            <div className="w-full flex items-center justify-between pb-1.5 border-b border-white/[0.06] shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-violet-400 animate-pulse" />
+                <span className="text-xs font-mono font-bold text-white uppercase">{activeAgent}</span>
+                <span className="text-[10px] font-mono text-white/40">· BUTLER ONLINE</span>
               </div>
 
-              {/* Right Utility Navigation (Uncluttered: Just Dashboard & Close) */}
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1.5">
                 <button
-                  onClick={handleRestoreFullApp}
-                  title="Open Command Center (Dashboard)"
-                  className="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-white/[0.14] text-white/70 hover:text-white flex items-center justify-center transition-all border border-white/[0.08]"
+                  onClick={handleOpenDashboard}
+                  title="Open Dashboard"
+                  className="w-7 h-7 rounded-lg bg-white/[0.04] hover:bg-white/[0.1] text-white/70 hover:text-white flex items-center justify-center transition-colors border border-white/[0.06]"
                 >
                   <LayoutDashboard className="w-3.5 h-3.5" />
                 </button>
-
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleToggleExpand(false);
+                    transitionTo('idle');
                   }}
-                  title="Collapse Dynamic Island (Esc)"
-                  className="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-white/[0.14] text-white/70 hover:text-white flex items-center justify-center transition-all border border-white/[0.08]"
+                  title="Collapse (Esc)"
+                  className="w-7 h-7 rounded-lg bg-white/[0.04] hover:bg-white/[0.1] text-white/70 hover:text-white flex items-center justify-center transition-colors border border-white/[0.06]"
                 >
                   <ChevronUp className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
-            {/* APPROVAL GATE CARD (Apple Pay / Face ID Authorization Style) */}
-            {pendingApproval && (
-              <div className="w-full my-2.5 p-3.5 rounded-2xl bg-gradient-to-b from-amber-500/[0.12] to-amber-950/[0.25] border border-amber-500/30 flex items-center justify-between shrink-0 shadow-lg animate-fadeIn gap-3">
-                <div className="flex-1 min-w-0 pr-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-400 text-black font-bold uppercase tracking-wider shrink-0">
-                      GATE #{pendingApproval.id.slice(-4)}
-                    </span>
-                    <span className="text-[11px] text-amber-200/90 font-medium">Authorization Required</span>
-                  </div>
-                  <span className="text-xs text-white/95 font-medium block leading-snug line-clamp-2">
-                    {pendingApproval.action}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <LiquidButton
-                    variant="destructive"
-                    size="sm"
-                    className="rounded-full px-3.5 py-1.5 text-xs font-semibold"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (onDenyAction) onDenyAction(pendingApproval.id, pendingApproval.token);
-                    }}
-                  >
-                    <X className="w-3.5 h-3.5" />
-                    <span>Reject</span>
-                  </LiquidButton>
-
-                  <LiquidButton
-                    variant="amber"
-                    size="sm"
-                    className="rounded-full px-4 py-1.5 text-xs font-semibold"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (onApproveAction) onApproveAction(pendingApproval.id, pendingApproval.token);
-                    }}
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    <span>Approve</span>
-                  </LiquidButton>
-                </div>
+            {/* Acoustic Chamber */}
+            <div className="w-full flex-1 flex flex-col items-center justify-center py-1">
+              <div className="w-16 h-16 rounded-full overflow-hidden flex items-center justify-center bg-black/40 border border-white/[0.08] shadow-inner">
+                <Strands
+                  colors={STRANDS_LUARD_COLORS}
+                  speed={1.05}
+                  amplitude={1.1}
+                  energy={0.65}
+                  level={audioLevel}
+                  listening={!isSpeaking && !isMuted}
+                  glass={true}
+                  interactive={true}
+                  scale={0.9}
+                  opacity={1.0}
+                />
               </div>
-            )}
+              <p className="text-xs font-mono text-white/80 truncate mt-2 text-center max-w-[400px]">
+                {captionText}
+              </p>
+            </div>
 
-            {/* ZONE 2: MAIN HERO VIEW (Acoustic Chamber & Dynamic Orb) */}
-            {!showVoiceSettings && (
-              <>
-                <div className="w-full flex-1 flex flex-col items-center justify-center py-2 my-auto">
-                  {/* Acoustic Glass Lens */}
-                  <div className="w-20 h-20 relative flex items-center justify-center rounded-full bg-gradient-to-b from-white/[0.05] via-transparent to-black/40 border border-white/[0.08] shadow-[inset_0_1px_2px_rgba(255,255,255,0.12),0_12px_32px_rgba(0,0,0,0.6)] overflow-hidden">
-                    <Strands
-                      colors={STRANDS_COLORS}
-                      count={3}
-                      speed={1.05}
-                      amplitude={1.15}
-                      waviness={1.0}
-                      energy={0.65}
-                      thickness={1.0}
-                      spread={1.0}
-                      glow={1.15}
-                      taper={1.0}
-                      intensity={1.0}
-                      saturation={1.0}
-                      scale={0.9}
-                      glass={true}
-                      glassSize={1.0}
-                      refraction={1.0}
-                      rim={1.1}
-                      dispersion={1.0}
-                      listening={!isSpeaking && !isMuted}
-                      level={audioLevel}
-                      interactive={true}
-                      clickPulse={true}
-                      intro={true}
-                      lightMode={false}
-                      opacity={1.0}
-                    />
-                  </div>
-
-                  {/* Subtitle / Caption Typography */}
-                  <div className="w-full px-6 pt-2.5 text-center">
-                    <p className="text-xs font-medium text-white/90 truncate leading-snug">
-                      {captionText}
-                    </p>
-                  </div>
-                </div>
-
-                {/* ZONE 3: APPLE BOTTOM TACTILE DOCK (3 Perfectly Spaced Buttons) */}
-                <div className="w-full flex items-center justify-center gap-3 pt-2 pb-1 shrink-0">
-                  {/* Button 1: Mic Mute */}
-                  <LiquidButton
-                    variant={isMuted ? 'default' : 'primary'}
-                    size="default"
-                    className="flex-1 max-w-[130px] rounded-full h-10 gap-2 font-medium"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleMute();
-                    }}
-                    title={isMuted ? 'Unmute microphone' : 'Mute microphone'}
-                  >
-                    {isMuted ? <MicOff className="w-4 h-4 text-neutral-400" /> : <Mic className="w-4 h-4 text-blue-200" />}
-                    <span>{isMuted ? 'Muted' : 'Mute'}</span>
-                  </LiquidButton>
-
-                  {/* Button 2: Voice Customizer */}
-                  <LiquidButton
-                    variant="default"
-                    size="default"
-                    className="flex-1 max-w-[130px] rounded-full h-10 gap-2 font-medium"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowVoiceSettings(true);
-                    }}
-                    title="Customize Voice & Acoustics (voice-generator.com)"
-                  >
-                    <SlidersHorizontal className="w-4 h-4 text-white/80" />
-                    <span>Voice</span>
-                  </LiquidButton>
-
-                  {/* Button 3: End Call */}
-                  <MetalButton
-                    variant="dark"
-                    size="default"
-                    className="flex-1 max-w-[130px] rounded-full h-10 gap-2 font-medium"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleEndSession();
-                    }}
-                    title="End voice session and collapse"
-                  >
-                    <PhoneOff className="w-4 h-4 text-red-400" />
-                    <span>End</span>
-                  </MetalButton>
-                </div>
-              </>
-            )}
-
-            {/* ZONE 2 ALTERNATE: APPLE SETTINGS SHEET (Voice-Generator.com Suite) */}
-            {showVoiceSettings && (
-              <div
-                onClick={(e) => e.stopPropagation()}
-                className="w-full flex-1 flex flex-col justify-between py-1 overflow-y-auto space-y-3 animate-fadeIn text-xs"
+            {/* Bottom Primary Controls (Nothing OS Minimalist Dock) */}
+            <div className="w-full flex items-center justify-center gap-2.5 pt-1 shrink-0">
+              <LiquidButton
+                variant={isMuted ? 'default' : 'primary'}
+                size="sm"
+                className="flex-1 max-w-[120px] rounded-xl h-8 gap-1.5 text-xs font-mono"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleMute();
+                }}
               >
-                {/* Sheet Sub-Header */}
-                <div className="flex items-center justify-between px-1">
-                  <button
-                    onClick={() => setShowVoiceSettings(false)}
-                    className="flex items-center gap-1 text-primary hover:text-primary/80 font-medium transition-colors"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                    <span>Voice</span>
-                  </button>
-                  <span className="font-semibold text-white/90 text-[13px] tracking-tight">
-                    Voice & Acoustics
-                  </span>
-                  <div className="w-12" />
-                </div>
+                {isMuted ? <MicOff className="w-3.5 h-3.5 text-neutral-400" /> : <Mic className="w-3.5 h-3.5 text-violet-300" />}
+                <span>{isMuted ? 'Muted' : 'Mute'}</span>
+              </LiquidButton>
 
-                {/* Segmented Controller for Tone (Apple Pill Tabs) */}
-                <div className="w-full bg-white/[0.06] p-1 rounded-full flex items-center border border-white/[0.08]">
-                  {(['calm_concise', 'conversational', 'direct'] as VoiceTone[]).map((tone) => (
-                    <button
-                      key={tone}
-                      onClick={() => setSelectedTone(tone)}
-                      className={`flex-1 py-1.5 rounded-full text-center font-medium transition-all ${
-                        selectedTone === tone
-                          ? 'bg-primary text-on-primary font-semibold shadow-sm'
-                          : 'text-white/60 hover:text-white'
-                      }`}
-                    >
-                      {tone === 'calm_concise' ? 'Concise' : tone === 'conversational' ? 'Colleague' : 'Direct'}
-                    </button>
-                  ))}
-                </div>
+              <LiquidButton
+                variant="default"
+                size="sm"
+                className="flex-1 max-w-[120px] rounded-xl h-8 gap-1.5 text-xs font-mono"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  transitionTo('settings');
+                }}
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5 text-white/70" />
+                <span>Voice</span>
+              </LiquidButton>
 
-                {/* Grouped Inset Card for Voice Parameters */}
-                <div className="space-y-3 bg-white/[0.04] p-3 rounded-2xl border border-white/[0.08]">
-                  {/* Voice Selector Row */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-[11px] font-medium text-white/70">Neural Model</span>
-                      <span className="text-[10px] font-mono text-white/40">{currentVoiceObj?.language}</span>
-                    </div>
-                    <select
-                      value={selectedVoiceId}
-                      onChange={(e) => {
-                        const newVoice = e.target.value;
-                        setSelectedVoiceId(newVoice);
-                        fetch(`${API_BASE}/api/tts/voice-generator/save`, {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            voice_id: newVoice,
-                            tone: selectedTone
-                          })
-                        }).catch(() => {});
-                      }}
-                      className="w-full bg-neutral-900/90 border border-white/15 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-primary font-medium"
-                    >
-                      {voiceList.map((v) => (
-                        <option key={v.id} value={v.id} className="bg-neutral-900 text-white">
-                          {v.name} ({v.gender}, {v.language})
-                        </option>
-                      ))}
-                    </select>
+              <MetalButton
+                variant="dark"
+                size="sm"
+                className="flex-1 max-w-[120px] rounded-xl h-8 gap-1.5 text-xs font-mono text-red-400"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  transitionTo('idle');
+                }}
+              >
+                <PhoneOff className="w-3.5 h-3.5" />
+                <span>End</span>
+              </MetalButton>
+            </div>
+          </div>
+        )}
+
+        {/* 4. APPROVAL STATE: Zero-Trust Security Gate (500 × 200 px) */}
+        {notchState === 'approval' && (
+          <div className="w-full h-full flex flex-col justify-between p-4 z-10 animate-fadeIn">
+            {/* Header */}
+            <div className="w-full flex items-center justify-between pb-2 border-b border-white/[0.06] shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-400/10 text-amber-300 font-bold uppercase tracking-wider border border-amber-400/20">
+                  GATE #{pendingApproval?.id ? pendingApproval.id.slice(-4) : '8921'}
+                </span>
+                <span className="text-xs font-mono text-white/60">AUTHORIZATION REQUIRED</span>
+              </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  transitionTo('idle');
+                }}
+                className="w-7 h-7 rounded-lg bg-white/[0.04] hover:bg-white/[0.1] text-white/70 hover:text-white flex items-center justify-center"
+              >
+                <ChevronUp className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Action Details */}
+            <div className="w-full flex-1 flex flex-col justify-center py-2">
+              <span className="text-sm font-semibold text-white/95 leading-snug line-clamp-2">
+                {pendingApproval?.action || 'Production Resource Deployment Authorization'}
+              </span>
+              <p className="text-xs font-mono text-white/50 mt-1">
+                Risk Level: <span className="text-amber-400 font-bold uppercase">{pendingApproval?.risk_level || 'HIGH'}</span> · Guardrail: Enforced
+              </p>
+            </div>
+
+            {/* Primary Action Buttons */}
+            <div className="w-full flex items-center justify-end gap-3 pt-1 shrink-0">
+              <LiquidButton
+                variant="destructive"
+                size="default"
+                className="rounded-xl px-5 h-9 text-xs font-mono font-semibold"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onDenyAction && pendingApproval) onDenyAction(pendingApproval.id, pendingApproval.token);
+                  transitionTo('idle');
+                }}
+              >
+                <X className="w-4 h-4" />
+                <span>Reject</span>
+              </LiquidButton>
+
+              <LiquidButton
+                variant="amber"
+                size="default"
+                className="rounded-xl px-6 h-9 text-xs font-mono font-semibold"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onApproveAction && pendingApproval) onApproveAction(pendingApproval.id, pendingApproval.token);
+                  transitionTo('idle');
+                }}
+              >
+                <Check className="w-4 h-4" />
+                <span>Authorize</span>
+              </LiquidButton>
+            </div>
+          </div>
+        )}
+
+        {/* 5. SETTINGS STATE: Voice & Acoustics Configuration (520 × 340 px) */}
+        {notchState === 'settings' && (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full h-full flex flex-col justify-between p-4 z-10 animate-fadeIn text-xs"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between pb-2 border-b border-white/[0.06] shrink-0">
+              <button
+                onClick={() => transitionTo('voice')}
+                className="flex items-center gap-1 text-primary hover:text-primary/80 font-mono font-medium transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                <span>Voice</span>
+              </button>
+              <span className="font-mono font-bold text-white text-[12px] uppercase tracking-wider">
+                Voice & Acoustics
+              </span>
+              <button
+                onClick={() => transitionTo('idle')}
+                className="w-6 h-6 rounded flex items-center justify-center text-white/50 hover:text-white"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Tone Selector */}
+            <div className="w-full bg-black/40 p-1 rounded-xl flex items-center border border-white/[0.06] my-2">
+              {(['calm_concise', 'conversational', 'direct'] as VoiceTone[]).map((tone) => (
+                <button
+                  key={tone}
+                  onClick={() => setSelectedTone(tone)}
+                  className={`flex-1 py-1.5 rounded-lg text-center font-mono font-medium text-[11px] transition-all ${
+                    selectedTone === tone
+                      ? 'bg-violet-600 text-white font-semibold shadow-sm'
+                      : 'text-white/50 hover:text-white'
+                  }`}
+                >
+                  {tone === 'calm_concise' ? 'Concise' : tone === 'conversational' ? 'Colleague' : 'Direct'}
+                </button>
+              ))}
+            </div>
+
+            {/* Voice Model Selector */}
+            <div className="space-y-2 bg-black/40 p-3 rounded-xl border border-white/[0.06]">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-mono text-white/60">Neural Butler Voice</span>
+                <span className="text-[10px] font-mono text-white/40">{selectedVoiceId}</span>
+              </div>
+              <select
+                value={selectedVoiceId}
+                onChange={(e) => {
+                  const newVoice = e.target.value;
+                  setSelectedVoiceId(newVoice);
+                  fetch(`${API_BASE}/api/tts/voice-generator/save`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ voice_id: newVoice, tone: selectedTone })
+                  }).catch(() => {});
+                }}
+                className="w-full bg-[#111317] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-violet-500 font-mono"
+              >
+                {voiceList.map((v) => (
+                  <option key={v.id} value={v.id} className="bg-[#111317] text-white">
+                    {v.name} ({v.language})
+                  </option>
+                ))}
+              </select>
+
+              {/* Sliders */}
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[10px] font-mono">
+                    <span className="text-white/50">Speed</span>
+                    <span className="text-violet-400 font-bold tabular-nums">{speechSpeed.toFixed(2)}x</span>
                   </div>
-
-                  {/* Sliders Grid: Speed & Pitch */}
-                  <div className="grid grid-cols-2 gap-3 pt-1">
-                    {/* Speaking Speed */}
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-white/60">Speed</span>
-                        <span className="font-mono text-primary font-semibold">{speechSpeed.toFixed(2)}x</span>
-                      </div>
-                      <input
-                        type="range"
-                        min="0.6"
-                        max="1.8"
-                        step="0.05"
-                        value={speechSpeed}
-                        onChange={(e) => setSpeechSpeed(parseFloat(e.target.value))}
-                        className="w-full h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-primary"
-                      />
-                    </div>
-
-                    {/* Voice Pitch */}
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-white/60">Pitch</span>
-                        <span className="font-mono text-primary font-semibold">
-                          {speechPitch > 0 ? `+${speechPitch}Hz` : `${speechPitch}Hz`}
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min="-25"
-                        max="25"
-                        step="1"
-                        value={speechPitch}
-                        onChange={(e) => setSpeechPitch(parseInt(e.target.value))}
-                        className="w-full h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-primary"
-                      />
-                    </div>
-                  </div>
+                  <input
+                    type="range"
+                    min="0.6"
+                    max="1.8"
+                    step="0.05"
+                    value={speechSpeed}
+                    onChange={(e) => setSpeechSpeed(parseFloat(e.target.value))}
+                    className="w-full h-1 bg-white/20 rounded appearance-none cursor-pointer accent-violet-500"
+                  />
                 </div>
 
-                {/* Bottom Action Row: Test Voice & Save */}
-                <div className="flex items-center gap-3 pt-1">
-                  <LiquidButton
-                    variant="primary"
-                    size="default"
-                    className="flex-1 rounded-full h-10 font-medium"
-                    disabled={isTestingVoice}
-                    onClick={() => handlePreviewVoice()}
-                  >
-                    <Play className="w-4 h-4 text-blue-200" />
-                    <span>{isTestingVoice ? 'Synthesizing...' : 'Preview Voice'}</span>
-                  </LiquidButton>
-
-                  <LiquidButton
-                    variant="emerald"
-                    size="default"
-                    className="flex-1 rounded-full h-10 font-medium"
-                    onClick={handleSaveVoiceConfig}
-                  >
-                    <Check className="w-4 h-4 text-emerald-200" />
-                    <span>Apply Voice</span>
-                  </LiquidButton>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[10px] font-mono">
+                    <span className="text-white/50">Pitch</span>
+                    <span className="text-violet-400 font-bold tabular-nums">{speechPitch}Hz</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="-25"
+                    max="25"
+                    step="1"
+                    value={speechPitch}
+                    onChange={(e) => setSpeechPitch(parseInt(e.target.value))}
+                    className="w-full h-1 bg-white/20 rounded appearance-none cursor-pointer accent-violet-500"
+                  />
                 </div>
               </div>
-            )}
+            </div>
+
+            {/* Bottom Actions */}
+            <div className="flex items-center gap-3 pt-2">
+              <LiquidButton
+                variant="primary"
+                size="default"
+                className="flex-1 rounded-xl h-9 font-mono text-xs"
+                disabled={isTestingVoice}
+                onClick={handlePreviewVoice}
+              >
+                <Play className="w-3.5 h-3.5 text-violet-200" />
+                <span>{isTestingVoice ? 'Speaking...' : 'Preview Voice'}</span>
+              </LiquidButton>
+
+              <LiquidButton
+                variant="emerald"
+                size="default"
+                className="flex-1 rounded-xl h-9 font-mono text-xs"
+                onClick={handleSaveVoiceConfig}
+              >
+                <Check className="w-3.5 h-3.5 text-emerald-200" />
+                <span>Apply Profile</span>
+              </LiquidButton>
+            </div>
           </div>
         )}
       </div>
-
-      {/* Floating Right-Click Context Menu */}
-      {showContextMenu && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          style={{ top: Math.min(showContextMenu.y, 220), left: Math.min(showContextMenu.x, 240) }}
-          className="fixed pointer-events-auto z-50 w-52 rounded-2xl bg-neutral-900/95 border border-white/10 shadow-2xl p-1.5 text-xs font-sans text-neutral-300 backdrop-blur-2xl animate-fadeIn"
-        >
-          <button
-            onClick={() => {
-              handleToggleExpand(!isExpanded);
-              setShowContextMenu(null);
-            }}
-            className="w-full text-left px-3 py-2 rounded-xl hover:bg-white/10 hover:text-white flex items-center gap-2.5 font-medium transition-colors"
-          >
-            <ChevronUp className="w-4 h-4" />
-            <span>{isExpanded ? 'Collapse to Pill' : 'Expand Island'}</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setShowContextMenu(null);
-              setIsExpanded(true);
-              setShowVoiceSettings(true);
-              notifyNativeResize(true);
-            }}
-            className="w-full text-left px-3 py-2 rounded-xl hover:bg-white/10 hover:text-white flex items-center gap-2.5 font-medium transition-colors"
-          >
-            <SlidersHorizontal className="w-4 h-4 text-primary" />
-            <span>Voice & Acoustics</span>
-          </button>
-
-          <button
-            onClick={handleRestoreFullApp}
-            className="w-full text-left px-3 py-2 rounded-xl hover:bg-white/10 hover:text-white flex items-center gap-2.5 font-medium transition-colors"
-          >
-            <LayoutDashboard className="w-4 h-4" />
-            <span>Command Center</span>
-          </button>
-
-          <button
-            onClick={toggleMute}
-            className="w-full text-left px-3 py-2 rounded-xl hover:bg-white/10 hover:text-white flex items-center gap-2.5 font-medium transition-colors"
-          >
-            {isMuted ? <Mic className="w-4 h-4 text-blue-400" /> : <MicOff className="w-4 h-4" />}
-            <span>{isMuted ? 'Unmute Mic' : 'Mute Mic'}</span>
-          </button>
-
-          <div className="h-[1px] bg-white/10 my-1.5" />
-
-          <button
-            onClick={() => {
-              setShowContextMenu(null);
-              if (onCloseOverlay) onCloseOverlay();
-              else fetch(`${API_BASE}/overlay/toggle`, { method: 'POST' }).catch(() => {});
-            }}
-            className="w-full text-left px-3 py-2 rounded-xl hover:bg-white/10 text-neutral-400 hover:text-white flex items-center gap-2.5 font-medium transition-colors"
-          >
-            <EyeOff className="w-4 h-4" />
-            <span>Hide Island (Ctrl+Shift+Space)</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setShowContextMenu(null);
-              if ((window as any).pywebview?.api?.exit_app) {
-                (window as any).pywebview.api.exit_app();
-              } else {
-                fetch(`${API_BASE}/tray/exit`, { method: 'POST' }).catch(() => {});
-              }
-            }}
-            className="w-full text-left px-3 py-2 rounded-xl hover:bg-red-500/20 text-red-400 flex items-center gap-2.5 font-medium transition-colors"
-          >
-            <Power className="w-4 h-4" />
-            <span>Exit PHOENIX</span>
-          </button>
-        </div>
-      )}
     </div>
   );
 };

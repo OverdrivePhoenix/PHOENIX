@@ -63,11 +63,28 @@ voice_overlay_window = None
 is_quitting = False
 notch_visible = True
 
+OVERLAY_WIDTH = 540
+OVERLAY_HEIGHT = 420
+active_hit_rect = [0, 0, 0, 0]
+
 
 class NotchApi:
-    """Direct JavaScript-to-Python bridge for 0ms latency notch geometry changes."""
+    """Direct JavaScript-to-Python bridge for 0ms latency notch hit-testing and control."""
+    def set_hit_rect(self, x: int, y: int, width: int, height: int):
+        global active_hit_rect
+        try:
+            screen_w, _ = get_screen_metrics()
+            win_x = max(0, (screen_w - OVERLAY_WIDTH) // 2)
+            active_hit_rect = [win_x + int(x), int(y), win_x + int(x) + int(width), int(y) + int(height)]
+        except Exception:
+            pass
+        return True
+
+    def set_interactive(self, interactive: bool):
+        set_overlay_interactivity(interactive)
+        return True
+
     def set_expanded(self, expanded: bool):
-        set_notch_geometry(expanded)
         return True
 
     def toggle_visibility(self):
@@ -81,6 +98,71 @@ class NotchApi:
     def exit_app(self):
         shutdown()
         return True
+
+
+def acquire_single_instance_lock():
+    """Acquires a named Windows Mutex to ensure exactly one instance of PHOENIX runs."""
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        mutex_name = "Global\\PHOENIX_DynamicNotch_SingleInstance_Mutex"
+        handle = kernel32.CreateMutexW(None, False, mutex_name)
+        last_error = kernel32.GetLastError()
+        ERROR_ALREADY_EXISTS = 183
+        if last_error == ERROR_ALREADY_EXISTS:
+            log_debug("Existing PHOENIX instance detected. Restoring dashboard and exiting.")
+            show_dashboard()
+            sys.exit(0)
+        return handle
+    except Exception as e:
+        log_debug(f"Single instance mutex notice: {e}")
+        return None
+
+
+def set_overlay_interactivity(interactive: bool):
+    """Toggles WS_EX_TRANSPARENT on the native overlay window so empty transparent areas pass mouse clicks through."""
+    try:
+        import ctypes
+        hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Notch")
+        if not hwnd:
+            hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Voice Overlay")
+        if hwnd:
+            GWL_EXSTYLE = -20
+            WS_EX_TRANSPARENT = 0x00000020
+            ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            if interactive:
+                new_style = ex_style & ~WS_EX_TRANSPARENT
+            else:
+                new_style = ex_style | WS_EX_TRANSPARENT
+            if new_style != ex_style:
+                ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, new_style)
+    except Exception:
+        pass
+
+
+def start_hit_test_monitor():
+    """Monitors cursor position against active notch element bounds to enable click pass-through."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        pt = wintypes.POINT()
+        is_interactive_now = True
+
+        while not is_quitting:
+            if user32.GetCursorPos(ctypes.byref(pt)):
+                x, y = pt.x, pt.y
+                x1, y1, x2, y2 = active_hit_rect
+                inside = (x1 <= x <= x2) and (y1 <= y <= y2)
+                if inside and not is_interactive_now:
+                    set_overlay_interactivity(True)
+                    is_interactive_now = True
+                elif not inside and is_interactive_now:
+                    set_overlay_interactivity(False)
+                    is_interactive_now = False
+            time.sleep(0.025)
+    except Exception as e:
+        log_debug(f"Hit test monitor notice: {e}")
 
 
 
@@ -262,8 +344,8 @@ def get_screen_metrics():
         return 1920, 1080
 
 
-def set_notch_geometry(expanded: bool):
-    """Dynamically resizes and centers the native notch overlay window at y = 0 with breathing margin."""
+def set_notch_geometry(expanded: bool = False):
+    """Keeps the native notch overlay window fixed at top-center; animations occur in-DOM."""
     try:
         import ctypes
         from ctypes import wintypes, c_int, c_void_p
@@ -276,9 +358,8 @@ def set_notch_geometry(expanded: bool):
             user32.SetWindowPos.restype = wintypes.BOOL
 
             screen_w, _ = get_screen_metrics()
-            # 580x540 expanded, 280x52 collapsed gives 20-30px transparent breathing margin around the island
-            w = 580 if expanded else 280
-            h = 540 if expanded else 52
+            w = OVERLAY_WIDTH
+            h = OVERLAY_HEIGHT
             x = max(0, (screen_w - w) // 2)
             y = 0
 
@@ -286,9 +367,9 @@ def set_notch_geometry(expanded: bool):
             SWP_SHOWWINDOW = 0x0040
             SWP_NOACTIVATE = 0x0010
             user32.SetWindowPos(hwnd, HWND_TOPMOST, x, y, w, h, SWP_SHOWWINDOW | SWP_NOACTIVATE)
-            log_debug(f"Notch geometry set: expanded={expanded}, at ({x}, {y}, {w}, {h})")
+            log_debug(f"Fixed overlay geometry maintained at ({x}, {y}, {w}, {h})")
     except Exception as e:
-        log_debug(f"Notch geometry error: {e}")
+        log_debug(f"Notch geometry notice: {e}")
 
 
 def show_dashboard():
@@ -340,8 +421,8 @@ def start_global_hotkey_listener():
 
 
 def configure_voice_overlay_window(expanded: bool = False):
-    """Strips all native window chrome, enforces DWM transparency, and positions flush at primary screen top-center (y = 0)."""
-    global voice_overlay_window
+    """Strips all native window chrome, enforces DWM transparency, eliminates Win11 borders, and centers flush at primary screen top-center (y = 0)."""
+    global voice_overlay_window, active_hit_rect
     try:
         import ctypes
         from ctypes import Structure, c_int
@@ -367,7 +448,7 @@ def configure_voice_overlay_window(expanded: bool = False):
             style |= WS_POPUP
             ctypes.windll.user32.SetWindowLongW(hwnd, GWL_STYLE, style)
 
-            # Skip Windows taskbar and Alt+Tab, force HWND_TOPMOST; ensure WS_EX_LAYERED is NOT set (breaks WebView2 transparency)
+            # Skip Windows taskbar and Alt+Tab, force HWND_TOPMOST; ensure WS_EX_LAYERED is NOT set (breaks WebView2 DirectComposition)
             ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
             ex_style |= (WS_EX_TOOLWINDOW | WS_EX_TOPMOST)
             ex_style &= ~(WS_EX_APPWINDOW | 0x00080000)
@@ -384,19 +465,42 @@ def configure_voice_overlay_window(expanded: bool = False):
             margins = MARGINS(-1, -1, -1, -1)
             ctypes.windll.dwmapi.DwmExtendFrameIntoClientArea(hwnd, ctypes.byref(margins))
 
-            # Apply Black backing canvas so DWM glass renders true transparency
+            # Windows 11 DWM: Disable window corner rounding (DWMWA_WINDOW_CORNER_PREFERENCE = 33, DWMWCP_DONOTROUND = 1)
+            try:
+                DWMWA_WINDOW_CORNER_PREFERENCE = 33
+                donotround = c_int(1)
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ctypes.byref(donotround), 4)
+            except Exception as dwm_e:
+                log_debug(f"DWM corner preference notice: {dwm_e}")
+
+            # Windows 11 DWM: Remove 1px border (DWMWA_BORDER_COLOR = 34, DWMWA_COLOR_NONE = 0xFFFFFFFE)
+            try:
+                DWMWA_BORDER_COLOR = 34
+                color_none = c_int(0xFFFFFFFE)
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, ctypes.byref(color_none), 4)
+            except Exception as dwm_e2:
+                log_debug(f"DWM border color notice: {dwm_e2}")
+
+            # Apply transparent backing canvas to WinForms Form
             if voice_overlay_window and hasattr(voice_overlay_window, "native") and voice_overlay_window.native:
                 try:
                     import webview.platforms.winforms as wf
                     form = voice_overlay_window.native
                     form.MinimumSize = wf.Size(0, 0)
                     form.MaximumSize = wf.Size(0, 0)
-                    form.BackColor = wf.Color.Black
+                    form.SetStyle(wf.WinForms.ControlStyles.SupportsTransparentBackColor, True)
+                    form.BackColor = wf.Color.Transparent
                 except Exception as e:
                     log_debug(f"Form BackColor transparency notice: {e}")
 
-            # Resize to exact dimensions and anchor at top-center (y = 0)
-            set_notch_geometry(expanded)
+            # Fixed dimensions anchored flush at top-center (y = 0)
+            set_notch_geometry(False)
+
+            # Initialize idle hit rect: centered 200px wide, 34px tall flush at y = 0
+            screen_w, _ = get_screen_metrics()
+            win_x = max(0, (screen_w - OVERLAY_WIDTH) // 2)
+            offset_x = (OVERLAY_WIDTH - 200) // 2
+            active_hit_rect = [win_x + offset_x, 0, win_x + offset_x + 200, 36]
     except Exception as e:
         log_debug(f"Voice overlay setup notice: {e}")
 
@@ -563,10 +667,13 @@ def main():
     global main_window, voice_overlay_window
     log_debug("========== PHOENIX DESKTOP LAUNCHER START ==========")
 
+    # 0. Acquire single instance lock (prevents duplicate zombie processes)
+    _lock = acquire_single_instance_lock()
+
     # Initialize Per-Monitor DPI awareness
     init_dpi_awareness()
 
-    # 1. Immediately vocalize activation: "System online, Sir."
+    # 1. Vocalize activation: "System online, Sir."
     speak_system_online()
 
     # 2. Start Control Plane (FastAPI + React Dashboard)
@@ -593,10 +700,10 @@ def main():
     target_url = "http://127.0.0.1:8000"
     overlay_url = "http://127.0.0.1:8000/#voice-overlay"
 
-    # 5. Compute primary screen top-center position for the notch pill
+    # 5. Compute primary screen top-center position for fixed transparent overlay canvas
     screen_w, _ = get_screen_metrics()
-    init_pill_w = 280
-    init_pill_h = 52
+    init_pill_w = OVERLAY_WIDTH
+    init_pill_h = OVERLAY_HEIGHT
     init_pill_x = max(0, (screen_w - init_pill_w) // 2)
     init_pill_y = 0
 
@@ -617,7 +724,7 @@ def main():
     )
 
     notch_api = NotchApi()
-    # Dynamic Island overlay window is the ONLY visible window at launch
+    # Dynamic Island overlay window is the ONLY visible window at launch (fixed transparent canvas)
     voice_overlay_window = webview.create_window(
         title="PHOENIX Notch",
         url=overlay_url,
@@ -629,6 +736,7 @@ def main():
         frameless=True,
         on_top=True,
         transparent=True,
+        background_color="#00000000",
         shadow=False,
         resizable=False,
         text_select=False,
@@ -652,10 +760,11 @@ def main():
 
     voice_overlay_window.events.closed += on_notch_closed
 
-    # 8. Initialize System Tray, Global Hotkey & IPC Listener
+    # 8. Initialize System Tray, Global Hotkey, Hit-Test Monitor & IPC Listener
     init_system_tray(main_window, voice_overlay_window)
     threading.Thread(target=start_tray_ipc_listener, args=(main_window, voice_overlay_window), daemon=True).start()
     threading.Thread(target=start_global_hotkey_listener, daemon=True).start()
+    threading.Thread(target=start_hit_test_monitor, daemon=True).start()
 
     # 9. Start pywebview event loop with Dynamic Island as primary window
     try:
