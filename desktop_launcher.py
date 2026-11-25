@@ -112,17 +112,43 @@ def _load_overlay_tokens():
         "states": {"idle": {"width": 168, "height": 34}}
     }
 
+import math
+
 _OVERLAY_TOKENS = _load_overlay_tokens()
 STATES = _OVERLAY_TOKENS["states"]
+TOP_GAP_DIP = int(_OVERLAY_TOKENS.get("topGap", 6))
 OVERLAY_WIDTH = int(_OVERLAY_TOKENS["window"]["width"])
 OVERLAY_HEIGHT = int(_OVERLAY_TOKENS["window"]["height"])
 DEBUG_SHAPE = os.environ.get("PHOENIX_DEBUG_SHAPE") == "1"
 
+
+class Spring:
+    def __init__(self, x: float, k: float = 420.0, zeta: float = 0.72):
+        self.x = self.target = float(x)
+        self.v = 0.0
+        self.k = k
+        self.c = 2.0 * zeta * math.sqrt(k)
+
+    def step(self, dt: float):
+        a = self.k * (self.target - self.x) - self.c * self.v
+        self.v += a * dt
+        self.x += self.v * dt
+
+    @property
+    def settled(self) -> bool:
+        return abs(self.target - self.x) < 0.25 and abs(self.v) < 2.0
+
+
 current_island_state = "idle"
 cur_dim = {"w": int(STATES["idle"]["width"]), "h": int(STATES["idle"]["height"])}
-tween_busy = False
+sw = Spring(float(STATES["idle"]["width"]), k=420.0, zeta=0.72)
+sh = Spring(float(STATES["idle"]["height"]), k=360.0, zeta=0.74)
+spring_lock = threading.Lock()
+spring_thread_running = False
+hover_in_timer = None
+hover_out_timer = None
+approval_collapse_timer = None
 tween_cancel = False
-hover_timer = None
 
 
 last_scale = 1.0
@@ -258,6 +284,37 @@ def _rgn_info(h: int):
     return t, (r.left, r.top, r.right, r.bottom)
 
 
+def list_windows_overlapping(R):
+    import ctypes
+    from ctypes import wintypes
+    user32 = ctypes.windll.user32
+    out = []
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def cb(h, _):
+        if user32.IsWindowVisible(h):
+            r = _rect_tuple(h)
+            if r[0] < R[2] and r[2] > R[0] and r[1] < R[3] and r[3] > R[1]:
+                b = ctypes.create_unicode_buffer(256)
+                user32.GetWindowTextW(h, b, 256)
+                ex = user32.GetWindowLongW(h, -20) & 0xFFFFFFFF
+                p = wintypes.DWORD()
+                user32.GetWindowThreadProcessId(h, ctypes.byref(p))
+                out.append((h, _cls_name(h), b.value, r, hex(ex), p.value, p.value == os.getpid()))
+        return True
+    user32.EnumWindows(cb, 0)
+    return out
+
+
+def get_screen_pixel(x: int, y: int):
+    import ctypes
+    hdc = ctypes.windll.user32.GetDC(0)
+    c = ctypes.windll.gdi32.GetPixel(hdc, int(x), int(y))
+    ctypes.windll.user32.ReleaseDC(0, hdc)
+    if c == -1 or c == 0xFFFFFFFF:
+        return None
+    return (c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF)
+
+
 def describe_hwnd(tag: str, hwnd: int):
     try:
         import ctypes
@@ -339,8 +396,8 @@ def log_overlay_diagnostics(tag: str, hwnd: int, w_dip: int, h_dip: int):
         log_diag(f"[DIAG:{tag}] error: {e}")
 
 
-def set_notch_region(hwnd: int, w_dip: int, h_dip: int):
-    """Clips the opaque native window to the notch silhouette (square top, rounded bottom) in physical px."""
+def set_notch_region(hwnd: int, w_dip: float, h_dip: float):
+    """Applies a fully-rounded floating pill Win32 SetWindowRgn (radius = min(h/2, 36) DIP) at TOP_GAP_DIP."""
     try:
         import ctypes
         from ctypes import wintypes
@@ -350,105 +407,153 @@ def set_notch_region(hwnd: int, w_dip: int, h_dip: int):
         s = scale_of(hwnd)
         Wn = max(1, px(w_dip, s))
         Hn = max(1, px(h_dip, s))
-        r_dip = min(24, h_dip // 2)
-        R = px(r_dip, s)
+        top_gap_px = px(TOP_GAP_DIP, s)
+        r_dip = min(h_dip / 2.0, 36.0)
+        R = max(1, px(r_dip, s))
         x0 = (px(OVERLAY_WIDTH, s) - Wn) // 2
 
-        rnd = gdi32.CreateRoundRectRgn(x0, -R, x0 + Wn + 1, Hn + 1, 2 * R, 2 * R)
-        clip = gdi32.CreateRectRgn(x0, 0, x0 + Wn, Hn)
-        out = gdi32.CreateRectRgn(0, 0, 0, 0)
-        gdi32.CombineRgn(out, rnd, clip, 1)  # RGN_AND
-        gdi32.DeleteObject(rnd)
-        gdi32.DeleteObject(clip)
-
-        if not user32.SetWindowRgn(wintypes.HWND(hwnd), out, True):
-            gdi32.DeleteObject(out)
+        rgn = gdi32.CreateRoundRectRgn(x0, top_gap_px, x0 + Wn + 1, top_gap_px + Hn + 1, 2 * R, 2 * R)
+        if not user32.SetWindowRgn(wintypes.HWND(hwnd), rgn, True):
+            gdi32.DeleteObject(rgn)
     except Exception as e:
         log_debug(f"SetWindowRgn notice: {e}")
 
 
-def transition_island_state(next_state: str):
-    """Main-process state machine: notifies renderer to fade out, tweens SetWindowRgn over 240ms, then notifies settled."""
-    global current_island_state, cur_dim, tween_busy, tween_cancel, voice_overlay_window
-    if is_quitting or not voice_overlay_window or next_state not in STATES:
-        return
-    if next_state == current_island_state or tween_busy:
-        return
+def _run_spring_loop():
+    global spring_thread_running, current_island_state, cur_dim
+    import ctypes
+    winmm = ctypes.windll.winmm
+    winmm.timeBeginPeriod(1)
+    times_ms = []
+    try:
+        last = time.perf_counter()
+        while not is_quitting:
+            now = time.perf_counter()
+            dt = min(now - last, 1.0 / 30.0)
+            last = now
+            steps = max(1, int(dt / (1.0 / 240.0)))
+            sub_dt = dt / steps
+            with spring_lock:
+                for _ in range(steps):
+                    sw.step(sub_dt)
+                    sh.step(sub_dt)
+                cur_w, cur_h = sw.x, sh.x
+                cur_dim["w"], cur_dim["h"] = round(cur_w), round(cur_h)
+                done = sw.settled and sh.settled
+                target_state = current_island_state
 
-    def _run():
-        global current_island_state, cur_dim, tween_busy, tween_cancel
-        tween_busy = True
-        tween_cancel = False
-        try:
             hwnd = get_overlay_hwnd()
-            if not hwnd:
-                return
+            if hwnd:
+                t_a = time.perf_counter()
+                set_notch_region(hwnd, cur_w, cur_h)
+                times_ms.append((time.perf_counter() - t_a) * 1000.0)
 
-            try:
-                voice_overlay_window.evaluate_js("window.dispatchEvent(new CustomEvent('island:leave'))")
-            except Exception:
-                pass
-
-            time.sleep(0.11)
-            if is_quitting or tween_cancel:
-                return
-
-            from_w, from_h = cur_dim["w"], cur_dim["h"]
-            to_w, to_h = int(STATES[next_state]["width"]), int(STATES[next_state]["height"])
-            dur = 0.24
-            t0 = time.perf_counter()
-
-            while not is_quitting and not tween_cancel:
-                p = min(1.0, (time.perf_counter() - t0) / dur)
-                e = 1.0 - pow(1.0 - p, 3)
-                cur_dim["w"] = round(from_w + (to_w - from_w) * e)
-                cur_dim["h"] = round(from_h + (to_h - from_h) * e)
-                set_notch_region(hwnd, cur_dim["w"], cur_dim["h"])
-                if p >= 1.0:
-                    break
-                time.sleep(0.016)
-
-            if not is_quitting and not tween_cancel:
-                current_island_state = next_state
+            if done:
+                fw, fh = float(STATES[target_state]["width"]), float(STATES[target_state]["height"])
+                cur_dim["w"], cur_dim["h"] = int(fw), int(fh)
+                if hwnd:
+                    set_notch_region(hwnd, fw, fh)
+                    verify_root_rgn(hwnd)
+                if times_ms:
+                    avg_ms = sum(times_ms) / len(times_ms)
+                    max_ms = max(times_ms)
+                    log_diag(f"[SPRING:{target_state}] frames={len(times_ms)} avg_apply={avg_ms:.3f}ms max_apply={max_ms:.3f}ms")
                 try:
                     voice_overlay_window.evaluate_js(
-                        f"window.dispatchEvent(new CustomEvent('island:settled', {{ detail: '{next_state}' }}))"
+                        f"window.dispatchEvent(new CustomEvent('island:settled', {{ detail: '{target_state}' }}))"
                     )
                 except Exception:
                     pass
-                log_overlay_diagnostics(f"state:{next_state}", hwnd, cur_dim["w"], cur_dim["h"])
-        finally:
-            tween_busy = False
+                break
 
-    threading.Thread(target=_run, daemon=True).start()
+            elapsed = time.perf_counter() - now
+            time.sleep(max(0.0, (1.0 / 60.0) - elapsed))
+    finally:
+        with spring_lock:
+            spring_thread_running = False
+        try:
+            winmm.timeEndPeriod(1)
+        except Exception:
+            pass
+
+
+def transition_island_state(next_state: str):
+    """Retargets spring physics smoothly (preserving velocity) and manages approval auto-collapse."""
+    global current_island_state, spring_thread_running, approval_collapse_timer
+    if is_quitting or not voice_overlay_window or next_state not in STATES:
+        return
+
+    with spring_lock:
+        if next_state == current_island_state and sw.settled and sh.settled:
+            return
+        current_island_state = next_state
+        sw.target = float(STATES[next_state]["width"])
+        sh.target = float(STATES[next_state]["height"])
+        need_start = not spring_thread_running
+        if need_start:
+            spring_thread_running = True
+
+    if approval_collapse_timer:
+        try:
+            approval_collapse_timer.cancel()
+        except Exception:
+            pass
+        approval_collapse_timer = None
+
+    if next_state == "approval":
+        def _auto_collapse():
+            if current_island_state == "approval":
+                transition_island_state("idle")
+        approval_collapse_timer = threading.Timer(10.0, _auto_collapse)
+        approval_collapse_timer.daemon = True
+        approval_collapse_timer.start()
+
+    try:
+        voice_overlay_window.evaluate_js("window.dispatchEvent(new CustomEvent('island:leave'))")
+    except Exception:
+        pass
+
+    if need_start:
+        threading.Thread(target=_run_spring_loop, daemon=True).start()
 
 
 class NotchApi:
-    """Direct JavaScript-to-Python bridge for notch state transitions and desktop controls."""
+    """Direct JavaScript-to-Python bridge for Dynamic Island state transitions and controls."""
     def set_state(self, next_state: str):
         transition_island_state(next_state)
         return True
 
     def hover(self, inside: bool):
-        global hover_timer
-        if hover_timer:
+        global hover_in_timer, hover_out_timer
+        if hover_in_timer:
             try:
-                hover_timer.cancel()
+                hover_in_timer.cancel()
             except Exception:
                 pass
-            hover_timer = None
+            hover_in_timer = None
+        if hover_out_timer:
+            try:
+                hover_out_timer.cancel()
+            except Exception:
+                pass
+            hover_out_timer = None
 
         if inside:
             if current_island_state == "idle":
-                transition_island_state("hover")
+                def _enter():
+                    if current_island_state == "idle":
+                        transition_island_state("hover")
+                hover_in_timer = threading.Timer(0.15, _enter)
+                hover_in_timer.daemon = True
+                hover_in_timer.start()
         else:
             if current_island_state == "hover":
                 def _leave():
                     if current_island_state == "hover":
                         transition_island_state("idle")
-                hover_timer = threading.Timer(0.12, _leave)
-                hover_timer.daemon = True
-                hover_timer.start()
+                hover_out_timer = threading.Timer(0.12, _leave)
+                hover_out_timer.daemon = True
+                hover_out_timer.start()
         return True
 
     def toggle_visibility(self):
@@ -744,25 +849,29 @@ def configure_voice_overlay_window(expanded: bool = False):
             WS_DLGFRAME = 0x00400000
             WS_POPUP = 0x80000000
             WS_EX_TOOLWINDOW = 0x00000080
-            WS_EX_APPWINDOW = 0x00040000
             WS_EX_TOPMOST = 0x00000008
+            WS_EX_NOACTIVATE = 0x08000000
 
-            style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
-            style &= ~(WS_CAPTION | WS_THICKFRAME | WS_BORDER | WS_DLGFRAME)
-            style |= WS_POPUP
+            style = WS_POPUP
             ctypes.windll.user32.SetWindowLongW(hwnd, GWL_STYLE, style)
 
-            ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-            ex_style |= (WS_EX_TOOLWINDOW | WS_EX_TOPMOST)
-            ex_style &= ~(WS_EX_APPWINDOW | 0x00080000)
+            ex_style = WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE
             ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style)
 
-            # Windows 11 DWM: Disable window corner rounding & 1px border
-            try:
-                ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(c_int(1)), 4)
-                ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(c_int(0xFFFFFFFE)), 4)
-            except Exception as dwm_e:
-                log_debug(f"DWM attribute notice: {dwm_e}")
+            # Part 1b: Explicit DWM attributes (kill Mica/Acrylic, NC rendering/shadow, rounding, and border)
+            dwm = ctypes.windll.dwmapi
+            from ctypes import wintypes
+            def _dwm_set(attr, value):
+                v = ctypes.c_uint32(value & 0xFFFFFFFF)
+                hr = dwm.DwmSetWindowAttribute(wintypes.HWND(hwnd), attr, ctypes.byref(v), ctypes.sizeof(v))
+                log_diag(f"[1b:dwm] attr={attr} val={hex(value)} hr={hr:#x}")
+                return hr
+
+            _dwm_set(2, 1)           # DWMWA_NCRENDERING_POLICY = DWMNCRP_DISABLED
+            _dwm_set(33, 1)          # DWMWA_WINDOW_CORNER_PREFERENCE = DWMWCP_DONOTROUND
+            _dwm_set(34, 0xFFFFFFFE) # DWMWA_BORDER_COLOR = DWMWA_COLOR_NONE
+            _dwm_set(38, 1)          # DWMWA_SYSTEMBACKDROP_TYPE = DWMSBT_NONE (overrides pywebview Mica 38=2)
+            _dwm_set(20, 1)          # DWMWA_USE_IMMERSIVE_DARK_MODE
 
             if voice_overlay_window and hasattr(voice_overlay_window, "native") and voice_overlay_window.native:
                 try:
@@ -773,7 +882,7 @@ def configure_voice_overlay_window(expanded: bool = False):
                         form.MinimumSize = wf.Size(0, 0)
                         form.MaximumSize = wf.Size(0, 0)
                         form.FormBorderStyle = getattr(wf.WinForms.FormBorderStyle, 'None')
-                        bg = wf.Color.FromArgb(255, 255, 0, 255) if DEBUG_SHAPE else wf.Color.FromArgb(255, 10, 10, 11)
+                        bg = wf.Color.FromArgb(255, 255, 0, 255) if DEBUG_SHAPE else wf.Color.FromArgb(255, 0, 0, 0)
                         form.BackColor = bg
                         if hasattr(form, "webview") and form.webview is not None:
                             form.webview.DefaultBackgroundColor = bg
@@ -791,10 +900,18 @@ def configure_voice_overlay_window(expanded: bool = False):
             describe_hwnd("after_set_notch_region", hwnd)
             r = _rect_tuple(hwnd)
             _, rb = _rgn_info(hwnd)
+            for winfo in list_windows_overlapping(r):
+                log_diag(f"[A1:overlap] hwnd={winfo[0]:#x} class={winfo[1]} title={winfo[2]!r} rect={winfo[3]} ex={winfo[4]} pid={winfo[5]} ours={winfo[6]}")
             cx = (r[0] + r[2]) // 2
-            probe_point("a_center_notch", cx, r[1] + max(5, (rb[3] - rb[1]) // 2))
-            probe_point("b_below_notch", cx, r[1] + rb[3] + 20)
-            probe_point("c_left_of_notch", r[0] + max(2, rb[0] - 20), r[1] + 10)
+            pts = [
+                ("a_center_notch", cx, r[1] + max(5, (rb[3] - rb[1]) // 2)),
+                ("b_below_notch", cx, r[1] + rb[3] + 20),
+                ("c_left_of_notch", r[0] + max(2, rb[0] - 20), r[1] + 10),
+                ("d_right_of_notch", r[0] + min(r[2] - r[0] - 2, rb[2] + 20), r[1] + 10),
+            ]
+            for ptag, px_x, px_y in pts:
+                probe_point(ptag, px_x, px_y)
+                log_diag(f"[A1:pixel:{ptag}] ({px_x},{px_y}) rgb={get_screen_pixel(px_x, px_y)}")
             if DEBUG_SHAPE:
                 try:
                     voice_overlay_window.evaluate_js("window.__PHOENIX_DEBUG_SHAPE__ = true;")
@@ -847,16 +964,12 @@ def start_tray_ipc_listener(main_win, overlay_win):
 
 def shutdown():
     """Immediately and cleanly terminates all background servers, windows, and process tree."""
-    global is_quitting, tween_cancel, hover_timer, control_server, local_server, tray_icon, main_window, voice_overlay_window
+    global is_quitting, tween_cancel, control_server, local_server, tray_icon, main_window, voice_overlay_window
     if is_quitting:
         return
     is_quitting = True
     tween_cancel = True
-    if hover_timer:
-        try:
-            hover_timer.cancel()
-        except Exception:
-            pass
+    _cancel_timers()
     log_debug("Shutting down PHOENIX background services and exiting...")
     if voice_overlay_window:
         try:
@@ -1041,7 +1154,7 @@ def main():
         frameless=True,
         on_top=True,
         transparent=False,
-        background_color="#FF00FF" if DEBUG_SHAPE else "#0A0A0B",
+        background_color="#FF00FF" if DEBUG_SHAPE else "#000000",
         shadow=False,
         resizable=False,
         text_select=False,

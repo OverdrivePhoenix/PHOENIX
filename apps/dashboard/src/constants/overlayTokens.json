@@ -1,13 +1,14 @@
 {
   "pad": 2,
+  "topGap": 6,
   "window": {
-    "width": 524,
-    "height": 200
+    "width": 576,
+    "height": 228
   },
   "states": {
     "idle": { "width": 200, "height": 36, "radius": 18 },
-    "hover": { "width": 360, "height": 84, "radius": 24 },
-    "voice": { "width": 440, "height": 196, "radius": 24 },
-    "approval": { "width": 520, "height": 196, "radius": 24 }
+    "hover": { "width": 360, "height": 84, "radius": 36 },
+    "voice": { "width": 440, "height": 196, "radius": 36 },
+    "approval": { "width": 520, "height": 196, "radius": 36 }
   }
 }

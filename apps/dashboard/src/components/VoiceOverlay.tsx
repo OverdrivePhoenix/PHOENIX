@@ -38,7 +38,8 @@ const STRANDS_COLORS = [
   '#27272A'
 ];
 
-const OPAQUE_CLEAR_COLOR = [10 / 255, 10 / 255, 11 / 255, 1.0];
+const OPAQUE_CLEAR_COLOR = [0.0, 0.0, 0.0, 1.0];
+const TOP_GAP = (OVERLAY_TOKENS as any).topGap ?? 6;
 
 const API_BASE =
   import.meta.env.VITE_API_BASE_URL ||
@@ -334,11 +335,15 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
   };
 
   const dim = STATE_DIMENSIONS[notchState];
+  const radius = Math.min(Math.floor(dim.height / 2), 36);
   const isDebugShape = typeof window !== 'undefined' && (window as any).__PHOENIX_DEBUG_SHAPE__ === true;
-  const surfaceBg = isDebugShape ? 'transparent' : '#0A0A0B';
+  const surfaceBg = isDebugShape ? 'transparent' : '#000000';
 
   return (
     <div
+      onClick={() => {
+        if (notchState !== 'idle') requestState('idle');
+      }}
       style={{
         width: '100%',
         height: '100%',
@@ -358,7 +363,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
         data-state={notchState}
         style={{
           position: 'absolute',
-          top: 0,
+          top: `${TOP_GAP}px`,
           left: '50%',
           transform: 'translateX(-50%)',
           width: `${dim.width}px`,
@@ -367,11 +372,8 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
           padding: notchState === 'idle' ? '0 12px' : '12px 16px',
           overflow: 'hidden',
           background: surfaceBg,
-          borderLeft: isReady && !isDebugShape ? '1px solid rgba(255, 255, 255, 0.10)' : 'none',
-          borderRight: isReady && !isDebugShape ? '1px solid rgba(255, 255, 255, 0.10)' : 'none',
-          borderBottom: isReady && !isDebugShape ? '1px solid rgba(255, 255, 255, 0.10)' : 'none',
-          borderTop: 'none',
-          borderRadius: isReady ? `0 0 ${dim.radius}px ${dim.radius}px` : '0px',
+          border: isReady && !isDebugShape ? '1px solid rgba(255, 255, 255, 0.10)' : 'none',
+          borderRadius: `${radius}px`,
           color: '#F2F2F2',
           cursor: 'pointer',
           userSelect: 'none'
