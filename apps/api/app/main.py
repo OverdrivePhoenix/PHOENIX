@@ -1,12 +1,17 @@
+import asyncio
 import io
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 
 from .config import settings
 from .firestore_db import db
+from . import live_db, live_service
+from .live_routes import router as live_router
+from .live_security import SESSION_SECRET
+from .adapters import github_client as gh_adapter
 from .policy_engine import PolicyEngine
 from .agents.jarvis import JarvisVoiceButler
 from .agents.planner import generate_plan
@@ -35,6 +40,10 @@ _is_emergency_paused = False
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await db.initialize()
+    live_db.init_live_db()
+    asyncio.create_task(live_service.sync_antigravity(force=True))
+    if gh_adapter.get_stored_token():
+        asyncio.create_task(live_service.sync_github(force=False))
     yield
 
 app = FastAPI(
@@ -51,6 +60,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(live_router)
 
 @app.get("/health")
 async def health():
@@ -564,5 +574,18 @@ _possible_dist_paths = [
 
 _static_dist = next((p for p in _possible_dist_paths if p and os.path.isdir(p)), None)
 if _static_dist:
+    @app.get("/", response_class=HTMLResponse)
+    @app.get("/index.html", response_class=HTMLResponse)
+    async def serve_dashboard_index():
+        idx_path = os.path.join(_static_dist, "index.html")
+        with open(idx_path, "r", encoding="utf-8") as f:
+            html = f.read()
+        meta_tag = f'<meta name="phoenix-session" content="{SESSION_SECRET}" />'
+        if "</head>" in html:
+            html = html.replace("</head>", f"  {meta_tag}\n</head>", 1)
+        else:
+            html = meta_tag + html
+        return HTMLResponse(content=html, headers={"Cache-Control": "no-store"})
+
     app.mount("/", StaticFiles(directory=_static_dist, html=True), name="static")
 
