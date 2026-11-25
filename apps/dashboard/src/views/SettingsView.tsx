@@ -36,70 +36,79 @@ export const SettingsView: React.FC = () => {
   const [activeProviderId, setActiveProviderId] = useState<string>('edge_tts');
   const [activeVoiceId, setActiveVoiceId] = useState<string>('en-GB-RyanNeural');
   const [activeTone, setActiveTone] = useState<VoiceTone>('calm_concise');
+  const [voiceRate, setVoiceRate] = useState<number>(1.0);
+  const [voicePitch, setVoicePitch] = useState<number>(1.0);
+  const [greetingEnabled, setGreetingEnabled] = useState<boolean>(true);
+  const [speakTypedReplies, setSpeakTypedReplies] = useState<boolean>(false);
+  const [voiceNotFoundNotice, setVoiceNotFoundNotice] = useState<string>('');
   const [apiKeyInput, setApiKeyInput] = useState<string>('');
   const [isTestingVoice, setIsTestingVoice] = useState<boolean>(false);
   const [testStatus, setTestStatus] = useState<string>('');
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const saveTimerRef = useRef<any>(null);
 
-  // Fetch TTS Providers metadata on mount
+  const persistSettingsDebounced = (override?: Partial<{
+    engine: string;
+    id: string;
+    name: string;
+    lang: string;
+    rate: number;
+    pitch: number;
+    tone: string;
+    greetingEnabled: boolean;
+    speakTypedReplies: boolean;
+  }>) => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      const eng = override?.engine ?? activeProviderId;
+      const vid = override?.id ?? activeVoiceId;
+      const prov = providers.find((p) => p.id === eng);
+      const vObj = prov?.voices.find((v) => v.id === vid);
+      const rawTone = override?.tone ?? activeTone;
+      const normTone = rawTone === 'calm_concise' ? 'concise' : rawTone;
+      fetch(`${API_BASE}/api/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          voice: {
+            engine: eng,
+            id: vid,
+            name: override?.name ?? vObj?.name ?? vid,
+            lang: override?.lang ?? vObj?.language ?? 'en-GB',
+            rate: override?.rate ?? voiceRate,
+            pitch: override?.pitch ?? voicePitch,
+            tone: normTone
+          },
+          greeting: { enabled: override?.greetingEnabled ?? greetingEnabled },
+          speakTypedReplies: override?.speakTypedReplies ?? speakTypedReplies
+        })
+      }).catch(() => {});
+    }, 300);
+  };
+
+  // Fetch TTS Providers & canonical settings.json on mount
   useEffect(() => {
-    fetch(`${API_BASE}/api/tts/providers`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data?.providers) {
-          setProviders(data.providers);
-          if (data.active_provider_id) setActiveProviderId(data.active_provider_id);
-          if (data.active_voice_id) setActiveVoiceId(data.active_voice_id);
-          if (data.active_tone) setActiveTone(data.active_tone);
+    Promise.all([
+      fetch(`${API_BASE}/api/tts/providers`).then((r) => r.json()).catch(() => null),
+      fetch(`${API_BASE}/api/settings`).then((r) => r.json()).catch(() => null)
+    ]).then(([provData, cfg]) => {
+      if (provData?.providers) setProviders(provData.providers);
+      if (cfg?.voice) {
+        setActiveProviderId(cfg.voice.engine || 'edge_tts');
+        setActiveVoiceId(cfg.voice.id || 'en-GB-RyanNeural');
+        const t = cfg.voice.tone === 'concise' ? 'calm_concise' : (cfg.voice.tone || 'calm_concise');
+        setActiveTone(t as VoiceTone);
+        setVoiceRate(typeof cfg.voice.rate === 'number' ? cfg.voice.rate : 1.0);
+        setVoicePitch(typeof cfg.voice.pitch === 'number' ? cfg.voice.pitch : 1.0);
+        setGreetingEnabled(cfg.greeting?.enabled !== false);
+        setSpeakTypedReplies(Boolean(cfg.speakTypedReplies));
+        if (cfg.voice_available === false) {
+          setVoiceNotFoundNotice('Saved voice not found, using default');
+        } else {
+          setVoiceNotFoundNotice('');
         }
-      })
-      .catch(() => {
-        // Fallback defaults if backend is initializing
-        setProviders([
-          {
-            id: 'edge_tts',
-            name: 'Edge Neural (Free & Unlimited)',
-            tier: 'Free (No Key Required)',
-            description: 'Ultra-realistic studio neural voices powered by Microsoft Azure. No API key needed.',
-            is_available: true,
-            is_active: true,
-            voices: [
-              {
-                id: 'en-GB-RyanNeural',
-                name: 'Ryan (British Butler / J.A.R.V.I.S.)',
-                gender: 'Male',
-                language: 'en-GB',
-                description: 'Warm, composed British butler cadence, refined and articulate.',
-                recommended_for_tone: 'calm_concise'
-              },
-              {
-                id: 'en-GB-SoniaNeural',
-                name: 'Sonia (British Female)',
-                gender: 'Female',
-                language: 'en-GB',
-                description: 'Clear, poised British professional voice.',
-                recommended_for_tone: 'calm_concise'
-              },
-              {
-                id: 'en-US-ChristopherNeural',
-                name: 'Christopher (US Senior Engineer)',
-                gender: 'Male',
-                language: 'en-US',
-                description: 'Confident, natural collaborative male colleague.',
-                recommended_for_tone: 'conversational'
-              },
-              {
-                id: 'en-US-JennyNeural',
-                name: 'Jenny (US Conversational)',
-                gender: 'Female',
-                language: 'en-US',
-                description: 'Warm, expressive, natural human conversational voice.',
-                recommended_for_tone: 'conversational'
-              }
-            ]
-          }
-        ]);
-      });
+      }
+    });
   }, []);
 
   // Update voice choices when active provider changes
@@ -109,8 +118,18 @@ export const SettingsView: React.FC = () => {
   const handleProviderChange = (newProviderId: string) => {
     setActiveProviderId(newProviderId);
     const prov = providers.find((p) => p.id === newProviderId);
-    if (prov && prov.voices.length > 0) {
-      setActiveVoiceId(prov.voices[0].id);
+    const nextVoice = prov && prov.voices.length > 0 ? prov.voices[0] : null;
+    if (nextVoice) {
+      setActiveVoiceId(nextVoice.id);
+      setVoiceNotFoundNotice('');
+      persistSettingsDebounced({
+        engine: newProviderId,
+        id: nextVoice.id,
+        name: nextVoice.name,
+        lang: nextVoice.language
+      });
+    } else {
+      persistSettingsDebounced({ engine: newProviderId });
     }
   };
 
@@ -153,10 +172,7 @@ export const SettingsView: React.FC = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          text: testPhrase,
-          provider: activeProviderId,
-          voice: activeVoiceId,
-          tone: activeTone
+          text: testPhrase
         })
       });
 
@@ -314,7 +330,13 @@ export const SettingsView: React.FC = () => {
               </label>
               <select
                 value={activeVoiceId}
-                onChange={(e) => setActiveVoiceId(e.target.value)}
+                onChange={(e) => {
+                  const vid = e.target.value;
+                  setActiveVoiceId(vid);
+                  setVoiceNotFoundNotice('');
+                  const vObj = currentVoices.find((v) => v.id === vid);
+                  persistSettingsDebounced({ id: vid, name: vObj?.name ?? vid, lang: vObj?.language ?? 'en-GB' });
+                }}
                 className="w-full bg-surface-container-lowest border border-outline-variant/40 rounded px-3 py-2 text-on-surface text-xs focus:outline-none focus:border-primary font-mono"
               >
                 {currentVoices.map((v) => (
@@ -323,6 +345,9 @@ export const SettingsView: React.FC = () => {
                   </option>
                 ))}
               </select>
+              {voiceNotFoundNotice && (
+                <p className="text-[11px] text-[#FF3B30] font-mono mt-1">{voiceNotFoundNotice}</p>
+              )}
               {currentVoices.find((v) => v.id === activeVoiceId)?.description && (
                 <p className="text-[10px] text-outline mt-1 italic">
                   {currentVoices.find((v) => v.id === activeVoiceId)?.description}
@@ -345,7 +370,10 @@ export const SettingsView: React.FC = () => {
                   <button
                     key={t.id}
                     type="button"
-                    onClick={() => setActiveTone(t.id)}
+                    onClick={() => {
+                      setActiveTone(t.id);
+                      persistSettingsDebounced({ tone: t.id });
+                    }}
                     className={`py-2 px-1.5 rounded text-center border transition-all ${
                       activeTone === t.id
                         ? 'bg-primary text-on-primary border-primary font-bold shadow-sm'
@@ -358,6 +386,77 @@ export const SettingsView: React.FC = () => {
                 ))}
               </div>
             </div>
+          </div>
+
+          {/* Rate, Pitch, Startup Greeting & Typed Reply Speech Controls */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-outline-variant/20">
+            <div>
+              <div className="flex items-center justify-between text-xs font-mono text-outline mb-1">
+                <span>SPEECH RATE</span>
+                <span className="text-on-surface tabular-nums">{voiceRate.toFixed(2)}x</span>
+              </div>
+              <input
+                type="range"
+                min="0.5"
+                max="2.0"
+                step="0.05"
+                value={voiceRate}
+                onChange={(e) => {
+                  const r = parseFloat(e.target.value);
+                  setVoiceRate(r);
+                  persistSettingsDebounced({ rate: r });
+                }}
+                className="w-full accent-primary cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between text-xs font-mono text-outline mb-1">
+                <span>VOICE PITCH</span>
+                <span className="text-on-surface tabular-nums">{voicePitch.toFixed(2)}</span>
+              </div>
+              <input
+                type="range"
+                min="0.5"
+                max="2.0"
+                step="0.05"
+                value={voicePitch}
+                onChange={(e) => {
+                  const p = parseFloat(e.target.value);
+                  setVoicePitch(p);
+                  persistSettingsDebounced({ pitch: p });
+                }}
+                className="w-full accent-primary cursor-pointer"
+              />
+            </div>
+
+            <label className="flex items-center justify-between gap-3 p-2.5 rounded bg-surface-container-lowest border border-outline-variant/30 cursor-pointer">
+              <span className="text-xs font-mono text-on-surface">Speak greeting on startup</span>
+              <input
+                type="checkbox"
+                checked={greetingEnabled}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setGreetingEnabled(checked);
+                  persistSettingsDebounced({ greetingEnabled: checked });
+                }}
+                className="accent-primary"
+              />
+            </label>
+
+            <label className="flex items-center justify-between gap-3 p-2.5 rounded bg-surface-container-lowest border border-outline-variant/30 cursor-pointer">
+              <span className="text-xs font-mono text-on-surface">Speak replies to typed commands</span>
+              <input
+                type="checkbox"
+                checked={speakTypedReplies}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setSpeakTypedReplies(checked);
+                  persistSettingsDebounced({ speakTypedReplies: checked });
+                }}
+                className="accent-primary"
+              />
+            </label>
           </div>
 
           {/* API Key configuration for keys-enabled providers */}

@@ -205,6 +205,39 @@ async def get_activity(project_id: Optional[str] = Query(None), limit: int = Que
 
 # ==================== SWAPPABLE TTS PROVIDERS ====================
 
+@app.get("/api/settings")
+async def get_app_settings():
+    from .settings_store import load_settings
+    cfg, source, path = load_settings()
+    vcfg = cfg["voice"]
+    prov = tts_manager.providers.get(vcfg["engine"])
+    voice_available = True
+    if prov and vcfg["engine"] != "browser_speech":
+        known_ids = {v.id for v in prov.get_voices()}
+        if known_ids and vcfg["id"] not in known_ids:
+            voice_available = False
+    return {
+        **cfg,
+        "source": source,
+        "path": path,
+        "voice_available": voice_available,
+    }
+
+
+@app.post("/api/settings")
+async def update_app_settings(payload: dict):
+    from .settings_store import save_settings
+    validated, path = save_settings(payload)
+    v = validated["voice"]
+    tts_tone = "calm_concise" if v["tone"] == "concise" else v["tone"]
+    tts_manager.set_active_config(
+        provider_id=v["engine"],
+        voice_id=v["id"],
+        tone=tts_tone,
+    )
+    return {"status": "ok", "path": path, **validated}
+
+
 @app.get("/api/tts/providers")
 async def get_tts_providers():
     return tts_manager.get_providers_info()
@@ -375,11 +408,28 @@ async def get_jarvis_briefing(project_id: Optional[str] = None, tone: str = Quer
         tone=tone
     )
 
+@app.get("/jarvis/history")
+async def get_jarvis_history():
+    from .settings_store import load_command_history
+    return {"history": load_command_history()}
+
+
 @app.post("/jarvis/command", response_model=JarvisVoiceCommandResponse)
 async def handle_jarvis_command(payload: JarvisVoiceCommandRequest):
     global _is_emergency_paused
-    tone_used = payload.tone or "calm_concise"
-    parsed = JarvisVoiceButler.parse_voice_response(payload.transcript, tone=tone_used)
+    from .settings_store import append_command_history, load_settings
+    raw_tx = (payload.transcript or "").strip()
+    if not raw_tx:
+        raise HTTPException(status_code=400, detail="Command cannot be empty")
+    truncated = len(raw_tx) > 4000
+    clean_tx = raw_tx[:4000]
+    append_command_history(clean_tx)
+
+    cfg, _, _ = load_settings()
+    tone_used = payload.tone or cfg["voice"]["tone"] or "calm_concise"
+    if tone_used == "concise":
+        tone_used = "calm_concise"
+    parsed = JarvisVoiceButler.parse_voice_response(clean_tx, tone=tone_used)
     action_taken = None
     if parsed["intent"] == "emergency_pause":
         _is_emergency_paused = True
@@ -392,6 +442,14 @@ async def handle_jarvis_command(payload: JarvisVoiceCommandRequest):
             top_appr = pending[0]
             await db.update_approval(top_appr["id"], "approved", channel="voice_call")
             action_taken = f"approved_{top_appr['id']}"
+
+    try:
+        import sys, os, time
+        app_dir = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+        with open(os.path.join(app_dir, "phoenix_runtime.txt"), "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} [cmd] len={len(clean_tx)} truncated={truncated} intent={parsed['intent']} action={action_taken}\n")
+    except Exception:
+        pass
 
     return JarvisVoiceCommandResponse(
         intent=parsed["intent"],

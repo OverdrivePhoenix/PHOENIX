@@ -467,9 +467,24 @@ class SwappableTTSManager:
         self._save_settings()
 
     async def synthesize(self, text: str, provider_id: Optional[str] = None, voice_id: Optional[str] = None, tone: Optional[str] = None) -> VoiceSynthesisResult:
-        chosen_provider_id = provider_id or self.active_provider_id
-        chosen_voice_id = voice_id or self.active_voice_id
-        chosen_tone = tone or self.active_tone
+        rate = 1.0
+        pitch_hz = 0
+        try:
+            from ..settings_store import load_settings
+            cfg, _, _ = load_settings()
+            vcfg = cfg.get("voice", {})
+            chosen_provider_id = provider_id or vcfg.get("engine") or self.active_provider_id
+            chosen_voice_id = voice_id or vcfg.get("id") or self.active_voice_id
+            chosen_tone = tone or vcfg.get("tone") or self.active_tone
+            rate = float(vcfg.get("rate", 1.0))
+            pitch_hz = int(round((float(vcfg.get("pitch", 1.0)) - 1.0) * 25))
+        except Exception:
+            chosen_provider_id = provider_id or self.active_provider_id
+            chosen_voice_id = voice_id or self.active_voice_id
+            chosen_tone = tone or self.active_tone
+
+        if chosen_tone == "concise":
+            chosen_tone = "calm_concise"
 
         clean = sanitize_speech_text(text)
         provider = self.providers.get(chosen_provider_id) or self.providers["edge_tts"]
@@ -480,7 +495,10 @@ class SwappableTTSManager:
             chosen_voice_id = "en-GB-RyanNeural"
 
         try:
-            audio = await provider.synthesize(clean, chosen_voice_id, chosen_tone)
+            if hasattr(provider, "synthesize_custom") and (rate != 1.0 or pitch_hz != 0):
+                audio = await provider.synthesize_custom(clean, chosen_voice_id, rate, pitch_hz, 100, chosen_tone)
+            else:
+                audio = await provider.synthesize(clean, chosen_voice_id, chosen_tone)
             return VoiceSynthesisResult(
                 audio_bytes=audio,
                 media_type="audio/mpeg",
