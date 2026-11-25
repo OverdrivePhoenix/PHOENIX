@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL ||
+  (typeof window !== 'undefined' && window.location.origin && !window.location.origin.includes('5173')
+    ? window.location.origin
+    : 'http://localhost:8000');
 
 interface VoiceOption {
   id: string;
@@ -114,6 +118,12 @@ export const SettingsView: React.FC = () => {
   // Update voice choices when active provider changes
   const activeProvider = providers.find((p) => p.id === activeProviderId) || providers[0];
   const currentVoices = activeProvider?.voices || [];
+  const matchedVoice = currentVoices.find((v) => v.id === activeVoiceId);
+  const resolvedSelectVoiceId =
+    matchedVoice?.id ||
+    currentVoices.find((v) => v.id === 'en-GB-RyanNeural')?.id ||
+    currentVoices[0]?.id ||
+    '';
 
   const handleProviderChange = (newProviderId: string) => {
     setActiveProviderId(newProviderId);
@@ -329,7 +339,8 @@ export const SettingsView: React.FC = () => {
                 Selected Voice Character
               </label>
               <select
-                value={activeVoiceId}
+                value={resolvedSelectVoiceId}
+                disabled={currentVoices.length === 0}
                 onChange={(e) => {
                   const vid = e.target.value;
                   setActiveVoiceId(vid);
@@ -339,14 +350,20 @@ export const SettingsView: React.FC = () => {
                 }}
                 className="w-full bg-surface-container-lowest border border-outline-variant/40 rounded px-3 py-2 text-on-surface text-xs focus:outline-none focus:border-primary font-mono"
               >
-                {currentVoices.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.name} ({v.gender}, {v.language})
-                  </option>
-                ))}
+                {currentVoices.length === 0 ? (
+                  <option value="">Loading voices...</option>
+                ) : (
+                  currentVoices.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.name} ({v.gender}, {v.language})
+                    </option>
+                  ))
+                )}
               </select>
-              {voiceNotFoundNotice && (
-                <p className="text-[11px] text-[#FF3B30] font-mono mt-1">{voiceNotFoundNotice}</p>
+              {(voiceNotFoundNotice || (currentVoices.length > 0 && !matchedVoice)) && (
+                <p className="text-[11px] text-[#FF3B30] font-mono mt-1">
+                  {voiceNotFoundNotice || 'Saved voice not found, using default'}
+                </p>
               )}
               {currentVoices.find((v) => v.id === activeVoiceId)?.description && (
                 <p className="text-[10px] text-outline mt-1 italic">
