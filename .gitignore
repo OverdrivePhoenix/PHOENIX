@@ -26,6 +26,7 @@ build/
 # Logs & Runtime
 *.log
 *.sqlite
+*.db
 data/
 *.egg-info/
 

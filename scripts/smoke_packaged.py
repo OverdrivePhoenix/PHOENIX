@@ -47,11 +47,27 @@ try:
         ("/api/tts/providers", 200),
         ("/live/projects", 200),
         ("/live/integrations/status", 200),
+        ("/live/summary", 200),
+        ("/live/digest", 200),
+        ("/live/events", 200),
     ]:
         x = httpx.get(base + path, headers=H, timeout=10.0)
         print(path, x.status_code)
         if x.status_code != want:
             die(f"{path} -> {x.status_code}")
+
+    # Verify SSE /live/stream emits initial snapshot event
+    with httpx.stream("GET", base + f"/live/stream?session={m.group(1)}", timeout=10.0) as sse:
+        if sse.status_code != 200:
+            die(f"/live/stream -> {sse.status_code}")
+        saw_snap = False
+        for line in sse.iter_lines():
+            if "event: snapshot" in line:
+                saw_snap = True
+                break
+        if not saw_snap:
+            die("/live/stream did not emit initial snapshot")
+        print("/live/stream 200 (snapshot OK)")
 
     if httpx.get(base + "/live/projects", headers={"Origin": base}, timeout=5.0).status_code != 401:
         die("session gate not enforced")

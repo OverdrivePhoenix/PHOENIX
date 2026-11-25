@@ -6,7 +6,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from .adapters import github_client as gh
-from . import live_db, live_service
+from . import live_db, live_events, live_service
 from .live_security import reject_path_fields, verify_live_request
 
 router = APIRouter(prefix="/live", dependencies=[Depends(verify_live_request)])
@@ -191,13 +191,32 @@ async def update_live_prefs(request: Request, payload: Dict[str, Any] = Body(...
     return {"ok": True, "prefs": cur}
 
 
+@router.get("/summary")
+async def get_live_summary():
+    return live_service.build_live_summary()
+
+
+@router.get("/digest")
+async def get_live_digest():
+    return live_events.build_boot_digest()
+
+
+@router.post("/integrations/github/test")
+async def test_github_connection():
+    return await live_service.test_github_connection()
+
+
 @router.get("/stream")
 async def live_sse_stream(request: Request):
     q = live_db.subscribe_sse()
 
     async def event_gen():
         try:
-            initial_snap = {"/live/projects": live_service.build_merged_projects()}
+            initial_snap = {
+                "/live/projects": live_service.build_merged_projects(),
+                "/live/summary": live_service.build_live_summary(),
+                "/live/events": {"events": live_db.list_events(limit=100)},
+            }
             yield f"event: snapshot\ndata: {json.dumps(initial_snap)}\n\n"
             while True:
                 if await request.is_disconnected():

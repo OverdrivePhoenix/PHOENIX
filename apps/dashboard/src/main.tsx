@@ -9,142 +9,70 @@ import { AgentsView } from './views/AgentsView';
 import { ProjectsView } from './views/ProjectsView';
 import { SettingsView } from './views/SettingsView';
 import { ActivityView } from './views/ActivityView';
-import { DynamicIsland } from './components/DynamicIsland';
 import { VoiceOverlay } from './components/VoiceOverlay';
 import { JarvisModal } from './components/JarvisModal';
 import { PlanModal } from './components/PlanModal';
+import { API_BASE, useLive } from './lib/liveApi';
 
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL ||
-  (typeof window !== 'undefined' && window.location.origin && !window.location.origin.includes('5173')
-    ? window.location.origin
-    : 'http://localhost:8000');
+const IS_DEMO = import.meta.env.VITE_PHOENIX_DEMO === '1';
 
 export function App() {
   const [activeView, setActiveView] = useState<ViewType>('command-center');
   const [projects, setProjects] = useState<any[]>([]);
   const [currentProjectId, setCurrentProjectId] = useState<string>('');
-  const [tasks, setTasks] = useState<any[]>([]);
   const [agents, setAgents] = useState<any[]>([]);
   const [approvals, setApprovals] = useState<any[]>([]);
-  const [executionLogs, setExecutionLogs] = useState<any[]>([]);
   const [isEmergencyPaused, setIsEmergencyPaused] = useState(false);
   const [jarvisBriefing, setJarvisBriefing] = useState<string>('');
   const [isJarvisModalOpen, setIsJarvisModalOpen] = useState(false);
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
-  const [sessionUptime, setSessionUptime] = useState('06h 42m 19s');
 
-  // Initial Fetch & Refresh
+  const { data: liveSummary } = useLive<any>('/live/summary', {
+    projects_tracked: 0,
+    need_attention: 0,
+    open_prs: 0,
+    ci_failing: 0,
+    most_active_project: null,
+    most_active_branch: null,
+    last_sync: null,
+    source_status: {}
+  });
+
+  const { data: liveEventsPayload, refresh: refreshEvents } = useLive<{ events: any[] }>('/live/events', {
+    events: []
+  });
+
   const refreshData = async () => {
     try {
-      // 1. Projects
-      const projRes = await fetch(`${API_BASE}/projects`).then((r) => r.json());
-      if (Array.isArray(projRes) && projRes.length > 0) {
+      const [projRes, agentRes, apprRes, jarvisRes] = await Promise.all([
+        fetch(`${API_BASE}/projects`).then((r) => r.json()).catch(() => null),
+        fetch(`${API_BASE}/agents`).then((r) => r.json()).catch(() => null),
+        fetch(`${API_BASE}/approvals`).then((r) => r.json()).catch(() => null),
+        fetch(`${API_BASE}/jarvis/briefing`).then((r) => r.json()).catch(() => null)
+      ]);
+      if (Array.isArray(projRes)) {
         setProjects(projRes);
-        if (!currentProjectId) {
-          setCurrentProjectId(projRes[0].id);
-        }
+        if (!currentProjectId && projRes.length > 0) setCurrentProjectId(projRes[0].id);
       }
-
-      // 2. Agents
-      const agentRes = await fetch(`${API_BASE}/agents`).then((r) => r.json());
       if (Array.isArray(agentRes)) setAgents(agentRes);
-
-      // 3. Approvals
-      const apprRes = await fetch(`${API_BASE}/approvals`).then((r) => r.json());
       if (Array.isArray(apprRes)) setApprovals(apprRes);
-
-      // 4. Execution Logs
-      const logRes = await fetch(`${API_BASE}/activity?limit=50`).then((r) => r.json());
-      if (Array.isArray(logRes)) setExecutionLogs(logRes);
-
-      // 5. J.A.R.V.I.S. Briefing
-      const jarvisRes = await fetch(`${API_BASE}/jarvis/briefing`).then((r) => r.json());
       if (jarvisRes?.script) {
         setJarvisBriefing(jarvisRes.script);
-        setIsEmergencyPaused(jarvisRes.emergency_paused);
+        setIsEmergencyPaused(Boolean(jarvisRes.emergency_paused));
       }
     } catch {
-      // Offline fallback state with realistic data matching Stitch designs
-      if (projects.length === 0) {
-        const mockProj = {
-          id: 'proj-canteen-1',
-          name: 'College Canteen App',
-          description: 'Autonomous canteen pre-ordering mobile & web application.',
-          goal: 'Build an MVP with login, menu browsing, cart, order placement and admin menu management.',
-          repo_url: 'https://github.com/org/canteen-app',
-          default_branch: 'feat/checkout-flow',
-          created_at: new Date().toISOString()
-        };
-        setProjects([mockProj]);
-        setCurrentProjectId(mockProj.id);
-      }
-
-      if (agents.length === 0) {
-        setAgents([
-          { id: 'chief_orchestrator', name: 'Chief Orchestrator', role: 'Global Coordination', model_name: 'gemini-2.5-flash', status: 'idle', total_tokens_used: 14200, success_rate: 98.4 },
-          { id: 'project_manager', name: 'Project Manager', role: 'PRD & Decomposition', model_name: 'gemini-2.5-flash', status: 'idle', total_tokens_used: 28400, success_rate: 96.2 },
-          { id: 'software_engineer', name: 'Software Engineer', role: 'Code & Refactoring', model_name: 'gemini-2.5-flash', status: 'running', total_tokens_used: 89500, success_rate: 92.1 },
-          { id: 'qa_engineer', name: 'QA Engineer', role: 'Test Suite Execution', model_name: 'gemini-2.5-flash', status: 'running', total_tokens_used: 41200, success_rate: 95.8 },
-          { id: 'security_reviewer', name: 'Security Reviewer', role: 'Diff Audits & Hygiene', model_name: 'gemini-2.5-flash', status: 'running', total_tokens_used: 19800, success_rate: 99.5 },
-          { id: 'devops_engineer', name: 'DevOps Engineer', role: 'CI/CD & Staging', model_name: 'gemini-2.5-flash', status: 'idle', total_tokens_used: 23100, success_rate: 94.0 }
-        ]);
-      }
-
-      if (approvals.length === 0) {
-        setApprovals([
-          {
-            id: 'appr-mock-1',
-            project_id: 'proj-canteen-1',
-            action: 'Cloud Resource Provisioning (Redis Cluster)',
-            rationale: 'Provision multi-region Redis replica for webhook idempotency key storage. Estimated cost: +$14.50/month against budget.',
-            risk_level: 'medium',
-            rollback_plan: 'Auto-deprovision Terraform state; fallback to memory cache.',
-            action_payload: { provider: 'AWS ElastiCache', node_type: 'cache.t4g.micro', region: 'us-east-1' },
-            approval_token: 'phx_appr_1774300000_c3ab87e912f9',
-            token_expires_at: new Date(Date.now() + 3600000).toISOString(),
-            status: 'pending',
-            created_at: new Date().toISOString()
-          }
-        ]);
-      }
-
-      if (tasks.length === 0) {
-        setTasks([
-          { id: 'task-1', title: 'Stripe Webhook & Idempotency Key Storage', status: 'in_progress', priority: 'high', feature_branch: 'feat/checkout-flow' },
-          { id: 'task-2', title: 'Order cancellation race condition test', status: 'blocked', priority: 'medium', feature_branch: 'feat/cancellation-race' },
-          { id: 'task-3', title: 'OAuth2 JWT token refresh rotation', status: 'done', priority: 'high', feature_branch: 'feat/jwt-auth' }
-        ]);
-      }
-
-      if (executionLogs.length === 0) {
-        setExecutionLogs([
-          { id: 'log-1', agent_id: 'software_engineer', level: 'info', event_type: 'tool_call', message: 'Mounted /workspaces/canteen-app into sandbox container phoenix-runner-canteen.', created_at: new Date().toISOString() },
-          { id: 'log-2', agent_id: 'qa_engineer', level: 'info', event_type: 'test_result', message: 'Executed pytest tests/integration/test_checkout.py: 14 passed in 2.1s.', created_at: new Date().toISOString() },
-          { id: 'log-3', agent_id: 'security_reviewer', level: 'warn', event_type: 'approval_requested', message: 'Interception: Redis resource provisioning requires verified human authorization.', created_at: new Date().toISOString() }
-        ]);
+      if (IS_DEMO && projects.length === 0) {
+        setProjects([{ id: 'demo-1', name: 'Demo Workspace', default_branch: 'main' }]);
       }
     }
   };
 
   useEffect(() => {
     refreshData();
-    const interval = setInterval(refreshData, 5000);
+    const interval = setInterval(refreshData, 10000);
     return () => clearInterval(interval);
   }, [currentProjectId]);
 
-  // Fetch Tasks for current project
-  useEffect(() => {
-    if (!currentProjectId) return;
-    fetch(`${API_BASE}/projects/${currentProjectId}/tasks`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data)) setTasks(data);
-      })
-      .catch(() => {});
-  }, [currentProjectId]);
-
-  // Emergency Pause Toggle
   const handleEmergencyPause = async () => {
     const nextState = !isEmergencyPaused;
     setIsEmergencyPaused(nextState);
@@ -157,7 +85,6 @@ export function App() {
     } catch {}
   };
 
-  // 1-Click Approve Action
   const handleApproveAction = async (approvalId: string, token: string) => {
     try {
       await fetch(`${API_BASE}/approvals/${approvalId}/decide`, {
@@ -170,15 +97,9 @@ export function App() {
         })
       });
       await refreshData();
-    } catch {
-      // Local optimistic update
-      setApprovals((prev) =>
-        prev.map((a) => (a.id === approvalId ? { ...a, status: 'approved', decided_at: new Date().toISOString() } : a))
-      );
-    }
+    } catch {}
   };
 
-  // 1-Click Deny Action
   const handleDenyAction = async (approvalId: string, token: string) => {
     try {
       await fetch(`${API_BASE}/approvals/${approvalId}/decide`, {
@@ -191,33 +112,21 @@ export function App() {
         })
       });
       await refreshData();
-    } catch {
-      setApprovals((prev) =>
-        prev.map((a) => (a.id === approvalId ? { ...a, status: 'rejected', decided_at: new Date().toISOString() } : a))
-      );
-    }
+    } catch {}
   };
 
-  // Create Project
   const handleCreateProject = async (name: string, goal: string, repoUrl: string) => {
-    try {
-      const res = await fetch(`${API_BASE}/projects`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, goal, repo_url: repoUrl })
-      }).then((r) => r.json());
-      if (res?.id) {
-        setProjects((prev) => [res, ...prev]);
-        setCurrentProjectId(res.id);
-      }
-    } catch {
-      const fallback = { id: `proj-${Date.now()}`, name, goal, repo_url: repoUrl, created_at: new Date().toISOString() };
-      setProjects((prev) => [fallback, ...prev]);
-      setCurrentProjectId(fallback.id);
+    const res = await fetch(`${API_BASE}/projects`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, goal, repo_url: repoUrl })
+    }).then((r) => r.json());
+    if (res?.id) {
+      setProjects((prev) => [res, ...prev]);
+      setCurrentProjectId(res.id);
     }
   };
 
-  // Plan Milestone
   const handleGeneratePlan = async (goal: string) => {
     if (!currentProjectId) throw new Error('No active project');
     const res = await fetch(`${API_BASE}/projects/${currentProjectId}/plan`, {
@@ -229,7 +138,6 @@ export function App() {
     return res;
   };
 
-  // J.A.R.V.I.S. Command
   const handleJarvisCommand = async (transcript: string) => {
     const res = await fetch(`${API_BASE}/jarvis/command`, {
       method: 'POST',
@@ -243,15 +151,23 @@ export function App() {
   const currentProject = projects.find((p) => p.id === currentProjectId) || projects[0];
   const topPendingApproval = approvals.find((a) => a.status === 'pending');
   const isStandaloneNotch = window.location.hash === '#dynamic-island' || window.location.pathname === '/island';
-  const isVoiceOverlay = window.location.hash === '#voice-overlay' || window.location.pathname === '/voice-overlay' || window.location.pathname === '/overlay';
+  const isVoiceOverlay =
+    window.location.hash === '#voice-overlay' ||
+    window.location.pathname === '/voice-overlay' ||
+    window.location.pathname === '/overlay';
 
   if (isVoiceOverlay || isStandaloneNotch) {
     return (
-      <div id="app" className="w-full h-full bg-transparent overflow-hidden" style={{ background: 'transparent', backgroundColor: 'transparent', margin: 0, padding: 0 }}>
+      <div
+        id="app"
+        className="w-full h-full bg-transparent overflow-hidden"
+        style={{ background: 'transparent', backgroundColor: 'transparent', margin: 0, padding: 0 }}
+      >
         <VoiceOverlay
           isStandaloneOverlay={true}
-          currentProjectName={currentProject?.name}
-          activeAgent="PHOENIX · SWE-03"
+          currentProjectName={liveSummary?.most_active_project || currentProject?.name || null}
+          needAttention={liveSummary?.need_attention ?? 0}
+          lastSync={liveSummary?.last_sync ?? null}
           pendingApproval={
             topPendingApproval
               ? {
@@ -262,7 +178,6 @@ export function App() {
                 }
               : null
           }
-          dailySpend={18.42}
           isEmergencyPaused={isEmergencyPaused}
           onApproveAction={handleApproveAction}
           onDenyAction={handleDenyAction}
@@ -288,54 +203,38 @@ export function App() {
 
   return (
     <div className="flex flex-col h-screen w-screen bg-[#0A0A0B] text-[#F2F2F2] overflow-hidden">
+      {IS_DEMO && (
+        <div className="px-4 py-1 bg-[#FF3B30] text-[#0A0A0B] text-[11px] font-mono font-bold text-center">
+          DEMO DATA MODE (PHOENIX_DEMO=1)
+        </div>
+      )}
+
       {/* Main Window Header */}
       <TitleBar
-        currentProjectName={currentProject?.name}
-        currentBranch={currentProject?.default_branch || 'feat/checkout-flow'}
-        jarvisStatus={isEmergencyPaused ? 'Paused' : 'Active'}
+        currentProjectName={liveSummary?.most_active_project || currentProject?.name || null}
+        currentBranch={liveSummary?.most_active_branch || currentProject?.default_branch || null}
+        needAttention={liveSummary?.need_attention ?? 0}
+        projectsTracked={liveSummary?.projects_tracked ?? 0}
         isEmergencyPaused={isEmergencyPaused}
         onEmergencyPauseToggle={handleEmergencyPause}
-        onOpenJarvisModal={() => setIsJarvisModalOpen(true)}
-        pendingApproval={
-          topPendingApproval
-            ? {
-                id: topPendingApproval.id,
-                action: topPendingApproval.action,
-                risk_level: topPendingApproval.risk_level,
-                token: topPendingApproval.approval_token
-              }
-            : null
-        }
-        activeAgent="SWE-03 · Run"
-        dailySpend={18.42}
-        onApproveAction={handleApproveAction}
-        onDenyAction={handleDenyAction}
       />
 
       {/* Main Desktop Window Shell */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Navigation Sidebar */}
         <Sidebar
           activeView={activeView}
           onSelectView={setActiveView}
           pendingApprovalsCount={approvals.filter((a) => a.status === 'pending').length}
         />
 
-        {/* Dynamic View Canvas */}
         <main className="flex-1 flex overflow-hidden">
           {activeView === 'command-center' && (
             <CommandCenterView
-              currentProject={currentProject}
-              tasks={tasks}
-              agents={agents}
-              approvals={approvals}
-              executionLogs={executionLogs}
-              dailySpend={18.42}
-              sessionUptime={sessionUptime}
-              onApproveAction={handleApproveAction}
-              onDenyAction={handleDenyAction}
+              summary={liveSummary}
+              events={liveEventsPayload?.events || []}
               onTriggerPlanModal={() => setIsPlanModalOpen(true)}
               onSendCommand={handleJarvisCommand}
+              onOpenSettings={() => setActiveView('settings')}
             />
           )}
 
@@ -362,11 +261,12 @@ export function App() {
 
           {activeView === 'settings' && <SettingsView />}
 
-          {activeView === 'activity' && <ActivityView logs={executionLogs} />}
+          {activeView === 'activity' && (
+            <ActivityView events={liveEventsPayload?.events || []} onRefresh={refreshEvents} />
+          )}
         </main>
       </div>
 
-      {/* J.A.R.V.I.S. Voice Engine Modal */}
       <JarvisModal
         isOpen={isJarvisModalOpen}
         onClose={() => setIsJarvisModalOpen(false)}
@@ -375,11 +275,10 @@ export function App() {
         onOpenLiveVoice={() => setActiveView('settings')}
       />
 
-      {/* Plan Milestone Modal */}
       <PlanModal
         isOpen={isPlanModalOpen}
         onClose={() => setIsPlanModalOpen(false)}
-        projectName={currentProject?.name || 'Initiative'}
+        projectName={liveSummary?.most_active_project || currentProject?.name || 'Workspace'}
         onGeneratePlan={handleGeneratePlan}
       />
     </div>

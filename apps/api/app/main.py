@@ -24,11 +24,13 @@ gh_adapter = None
 try:
     from . import live_db as _live_db
     from . import live_service as _live_service
+    from . import live_scheduler as _live_scheduler
     from .live_routes import router as _live_router
     from .live_security import SESSION_SECRET as _SESSION_SECRET
     from .adapters import github_client as _gh_adapter
     live_db = _live_db
     live_service = _live_service
+    live_scheduler = _live_scheduler
     live_router = _live_router
     SESSION_SECRET = _SESSION_SECRET
     gh_adapter = _gh_adapter
@@ -82,6 +84,7 @@ async def lifespan(app: FastAPI):
             kr_backend = gh_adapter.get_keyring_backend_name()
             if gh_adapter.get_stored_token():
                 asyncio.create_task(live_service.sync_github(force=False))
+        live_scheduler.start_scheduler()
     try:
         import psutil
         ps_ver = getattr(psutil, "__version__", "unknown")
@@ -99,6 +102,11 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
     yield
+    if LIVE_AVAILABLE:
+        try:
+            await live_scheduler.stop_scheduler()
+        except Exception:
+            pass
 
 app = FastAPI(
     title="Project PHOENIX Cloud Control Plane",

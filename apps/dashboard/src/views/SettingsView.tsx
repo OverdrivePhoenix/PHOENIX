@@ -347,18 +347,44 @@ export const SettingsView: React.FC = () => {
                 <SourceBadge label="status" status={intStatus?.source_status?.github} />
               </div>
               {intStatus?.github_connected && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    setIntBusy(true);
-                    await liveApi.del('/live/integrations/github').catch(() => {});
-                    loadIntegrations();
-                    setIntBusy(false);
-                  }}
-                  className="px-2.5 py-1 rounded-[4px] border border-[#FF3B30]/40 text-[#FF3B30] text-[11px] font-mono hover:bg-[#FF3B30]/10"
-                >
-                  Disconnect
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={intBusy}
+                    onClick={async () => {
+                      setIntBusy(true);
+                      setIntMsg(null);
+                      try {
+                        const res = await liveApi.post<any>('/live/integrations/github/test');
+                        if (res.ok) {
+                          setIntMsg(`GitHub OK: @${res.login} · ${res.repo_count} repos · quota ${res.rate_remaining ?? '—'}`);
+                        } else {
+                          const perms = (res.missing_permissions || []).join(', ');
+                          setIntMsg(`GitHub test failed: ${res.error}${perms ? ` (Missing: ${perms})` : ''}`);
+                        }
+                      } catch (e: any) {
+                        setIntMsg(e?.message || 'Test connection failed');
+                      } finally {
+                        setIntBusy(false);
+                      }
+                    }}
+                    className="px-2.5 py-1 rounded-[4px] border border-white/[0.14] text-[#F2F2F2] text-[11px] font-mono hover:border-white/[0.3]"
+                  >
+                    Test Connection
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setIntBusy(true);
+                      await liveApi.del('/live/integrations/github').catch(() => {});
+                      loadIntegrations();
+                      setIntBusy(false);
+                    }}
+                    className="px-2.5 py-1 rounded-[4px] border border-[#FF3B30]/40 text-[#FF3B30] text-[11px] font-mono hover:bg-[#FF3B30]/10"
+                  >
+                    Disconnect
+                  </button>
+                </div>
               )}
             </div>
 

@@ -11,7 +11,7 @@ import httpx
 
 from .adapters import antigravity as ag
 from .adapters import github_client as gh
-from . import live_db
+from . import live_db, live_events
 
 _GH_CLIENT: Optional[gh.GH] = None
 _GH_CLIENT_TOKEN: Optional[str] = None
@@ -108,6 +108,7 @@ def build_merged_projects(include_excluded: bool = False) -> Dict[str, Any]:
 
 async def sync_antigravity(force: bool = False) -> Dict[str, Any]:
     try:
+        prev_projects = {p["id"]: p for p in live_db.list_db_projects(include_excluded=True)}
         items, meta = await asyncio.to_thread(ag.scan_workspaces, force)
         if items is not None:
             live_db.upsert_projects(items, clear_non_manual=True)
@@ -124,8 +125,12 @@ async def sync_antigravity(force: bool = False) -> Dict[str, Any]:
             if refreshed:
                 live_db.upsert_projects(refreshed, clear_non_manual=False)
 
+        cur_projects = live_db.list_db_projects(include_excluded=False)
+        candidates = live_events.diff_local_projects(prev_projects, cur_projects)
+        emitted = live_events.record_transition_events("antigravity", candidates)
+
         now = live_db.utc_now_iso()
-        state = "live" if meta.get("roots") or live_db.list_db_projects() else "disconnected"
+        state = "live" if meta.get("roots") or cur_projects else "disconnected"
         live_db.upsert_source_status(
             "antigravity",
             state=state,
@@ -135,8 +140,8 @@ async def sync_antigravity(force: bool = False) -> Dict[str, Any]:
             meta=meta,
         )
         snap = build_merged_projects()
-        live_db.broadcast_sse("snapshot", {"/live/projects": snap})
-        return {"ok": True, "meta": meta, "state": state}
+        live_db.broadcast_sse("snapshot", {"/live/projects": snap, "/live/summary": build_live_summary()})
+        return {"ok": True, "meta": meta, "state": state, "events": emitted}
     except Exception as exc:
         ag.log_ag(f"sync error: {exc!r}")
         statuses = live_db.get_source_statuses()
@@ -164,10 +169,13 @@ async def sync_github(force: bool = False) -> Dict[str, Any]:
 
     client = _get_gh_client(token)
     try:
-        # Conditional REST check on /user when not forced to avoid unnecessary GraphQL calls if unchanged
+        prev_repos = {r["nameWithOwner"].lower(): r for r in live_db.list_db_repos(include_excluded=True)}
         info = await client.validate_token()
         sweep = await client.sweep_repos()
         live_db.upsert_repos(sweep["repos"])
+        cur_repos = live_db.list_db_repos(include_excluded=False)
+        candidates = live_events.diff_repos(prev_repos, cur_repos)
+        emitted = live_events.record_transition_events("github", candidates)
         now = live_db.utc_now_iso()
         meta = {
             "connected": True,
@@ -187,8 +195,8 @@ async def sync_github(force: bool = False) -> Dict[str, Any]:
             meta=meta,
         )
         snap = build_merged_projects()
-        live_db.broadcast_sse("snapshot", {"/live/projects": snap})
-        return {"ok": True, "state": "live", "meta": meta}
+        live_db.broadcast_sse("snapshot", {"/live/projects": snap, "/live/summary": build_live_summary()})
+        return {"ok": True, "state": "live", "meta": meta, "events": emitted}
     except gh.BackoffError as exc:
         gh.log_gh(f"backoff: {exc}")
         statuses = live_db.get_source_statuses()
@@ -317,5 +325,71 @@ async def pick_and_add_folder() -> Dict[str, Any]:
     live_db.upsert_projects([item], clear_non_manual=False)
     ag.log_ag(f"Manually added project id={pid} name={item['name']}")
     snap = build_merged_projects()
-    live_db.broadcast_sse("snapshot", {"/live/projects": snap})
+    live_db.broadcast_sse("snapshot", {"/live/projects": snap, "/live/summary": build_live_summary()})
     return {"ok": True, "project_id": pid, "name": item["name"]}
+
+
+def build_live_summary() -> Dict[str, Any]:
+    merged = build_merged_projects(include_excluded=False)
+    projects = merged["projects"]
+    events = live_db.list_events(limit=100)
+    unseen_attention = [e for e in events if not e.get("seen") and e.get("severity") in {"attention", "urgent"}]
+    open_prs = sum(int((p.get("github") or {}).get("openPrsCount") or 0) for p in projects)
+    ci_failing = sum(1 for p in projects if (p.get("github") or {}).get("ciState") in {"FAILURE", "ERROR"})
+    need_attention = len(unseen_attention) + ci_failing
+    most_active = projects[0] if projects else None
+    statuses = merged["source_status"]
+    last_ok_times = [s.get("last_ok") for s in statuses.values() if s.get("last_ok")]
+    return {
+        "projects_tracked": len(projects),
+        "need_attention": need_attention,
+        "open_prs": open_prs,
+        "ci_failing": ci_failing,
+        "most_active_project": most_active["name"] if most_active else None,
+        "most_active_branch": most_active.get("branch") if most_active else None,
+        "last_sync": max(last_ok_times) if last_ok_times else None,
+        "antigravity_running": merged["antigravity_running"],
+        "source_status": statuses,
+    }
+
+
+async def test_github_connection() -> Dict[str, Any]:
+    token = gh.get_stored_token()
+    if not token:
+        return {"ok": False, "error": "Not connected. Store a token first.", "missing_permissions": []}
+    client = _get_gh_client(token)
+    missing: List[str] = []
+    try:
+        info = await client.validate_token()
+    except httpx.HTTPStatusError as exc:
+        return {"ok": False, "error": f"Token rejected (HTTP {exc.response.status_code})", "missing_permissions": ["user:read"]}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "missing_permissions": []}
+
+    try:
+        sweep = await client.sweep_repos()
+        return {
+            "ok": True,
+            "login": sweep.get("login") or info.get("login"),
+            "repo_count": len(sweep.get("repos") or []),
+            "rate_remaining": sweep.get("rate_remaining"),
+            "scopes": info.get("scopes", []),
+            "sso_notice": info.get("sso_notice"),
+            "missing_permissions": [],
+        }
+    except Exception as exc:
+        msg = str(exc)
+        low = msg.lower()
+        for perm in ("contents", "pull requests", "issues", "actions", "checks", "metadata"):
+            if perm in low:
+                missing.append(perm)
+        if not missing and ("403" in msg or "accessible" in low or "scope" in low):
+            missing = ["Metadata (read)", "Contents (read)", "Pull requests (read)", "Issues (read)", "Actions/Checks (read)"]
+        return {
+            "ok": False,
+            "login": info.get("login"),
+            "repo_count": 0,
+            "rate_remaining": info.get("rate_remaining"),
+            "missing_permissions": missing,
+            "error": msg,
+        }

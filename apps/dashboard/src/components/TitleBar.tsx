@@ -1,46 +1,29 @@
 import React from 'react';
+import { API_BASE } from '../lib/liveApi';
 
 interface TitleBarProps {
-  currentProjectName: string;
-  currentBranch: string;
-  jarvisStatus: string;
+  currentProjectName?: string | null;
+  currentBranch?: string | null;
+  needAttention?: number;
+  projectsTracked?: number;
   isEmergencyPaused: boolean;
   onEmergencyPauseToggle: () => void;
-  onOpenJarvisModal?: () => void;
-  onOpenLiveVoice?: () => void;
-  onOpenDynamicIslandSuite?: () => void;
-  pendingApproval?: {
-    id: string;
-    action: string;
-    risk_level: string;
-    token: string;
-  } | null;
-  activeAgent?: string;
-  dailySpend?: number;
-  onApproveAction?: (id: string, token: string) => void;
-  onDenyAction?: (id: string, token: string) => void;
 }
-
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL ||
-  (typeof window !== 'undefined' && window.location.origin && !window.location.origin.includes('5173')
-    ? window.location.origin
-    : 'http://localhost:8000');
 
 export const TitleBar: React.FC<TitleBarProps> = ({
   currentProjectName,
   currentBranch,
+  needAttention = 0,
+  projectsTracked = 0,
   isEmergencyPaused,
-  onEmergencyPauseToggle,
-  activeAgent = 'SWE-03',
-  dailySpend = 18.42
+  onEmergencyPauseToggle
 }) => {
-  const projectLabel = currentProjectName || 'College Canteen App';
-  const branchLabel = currentBranch || 'feat/checkout-flow';
+  const projectLabel = currentProjectName || 'No active project';
+  const branchLabel = currentBranch || '—';
 
   return (
     <header className="h-12 w-full bg-[#0A0A0B] border-b border-white/[0.08] flex items-center justify-between gap-6 px-6 shrink-0 select-none">
-      {/* Left: Wordmark + Project + Branch (non-overlapping flex) */}
+      {/* Left: Wordmark + Project + Branch */}
       <div className="flex items-center gap-4 min-w-0">
         <span
           className="font-display text-[18px] tracking-[0.08em] text-[#F2F2F2] whitespace-nowrap shrink-0"
@@ -66,7 +49,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         </span>
       </div>
 
-      {/* Right: Telemetry Readout + Overlay Toggle + Emergency Pause (single row, no overlap) */}
+      {/* Right: Live Attention Readout + Overlay Toggle + Emergency Pause */}
       <div className="flex items-center gap-4 shrink-0">
         <button
           onClick={() => {
@@ -77,15 +60,19 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         >
           <span
             className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-              isEmergencyPaused ? 'bg-[#FF3B30]' : 'bg-[#F2F2F2]'
+              isEmergencyPaused || needAttention > 0 ? 'bg-[#FF3B30]' : 'bg-[#F2F2F2]'
             }`}
           />
-          <span className="text-[11px] font-mono text-[#F2F2F2] whitespace-nowrap">
-            {activeAgent.replace(' · Run', '')}
+          <span className="text-[11px] font-mono text-[#F2F2F2] tabular-nums whitespace-nowrap">
+            {projectsTracked} tracked
           </span>
           <span className="h-2.5 w-px bg-white/[0.08]" />
-          <span className="text-[11px] font-mono tabular-nums text-[#8A8A8E] whitespace-nowrap">
-            ${dailySpend.toFixed(2)}
+          <span
+            className={`text-[11px] font-mono tabular-nums whitespace-nowrap ${
+              needAttention > 0 ? 'text-[#FF3B30]' : 'text-[#8A8A8E]'
+            }`}
+          >
+            {needAttention} attention
           </span>
         </button>
 

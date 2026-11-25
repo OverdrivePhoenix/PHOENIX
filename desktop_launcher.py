@@ -1101,10 +1101,14 @@ def speak_startup_greeting():
             pending_count = 0
             try:
                 import json
-                with urllib.request.urlopen("http://127.0.0.1:8000/projects", timeout=2.0) as r:
-                    projs = json.loads(r.read().decode("utf-8"))
-                    if isinstance(projs, list) and projs and projs[0].get("name"):
-                        parts.append(f"SWE-03 is active on {projs[0]['name']}.")
+                req = urllib.request.Request(
+                    "http://127.0.0.1:8000/live/digest",
+                    headers={"X-Phoenix-Session": os.environ.get("PHOENIX_SESSION_SECRET", "")},
+                )
+                with urllib.request.urlopen(req, timeout=2.0) as r:
+                    digest = json.loads(r.read().decode("utf-8"))
+                    if digest.get("text"):
+                        parts.append(digest["text"])
             except Exception:
                 pass
 
@@ -1214,6 +1218,8 @@ def on_window_ready(window):
 
 def main():
     global main_window, voice_overlay_window
+    import secrets
+    os.environ.setdefault("PHOENIX_SESSION_SECRET", secrets.token_urlsafe(32))
     log_debug("========== PHOENIX DESKTOP LAUNCHER START ==========")
 
     # 0. Acquire single instance lock (prevents duplicate zombie processes)

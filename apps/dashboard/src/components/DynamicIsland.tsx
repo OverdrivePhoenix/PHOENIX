@@ -22,10 +22,10 @@ interface DynamicIslandProps {
 }
 
 export const DynamicIsland: React.FC<DynamicIslandProps> = ({
-  activeAgent = 'SWE-03 · Run',
+  activeAgent = 'PHOENIX',
   pendingApproval,
-  dailySpend = 18.42,
-  sessionUptime = '06h 42m',
+  dailySpend = 0,
+  sessionUptime = '—',
   isEmergencyPaused = false,
   onApproveAction,
   onDenyAction,

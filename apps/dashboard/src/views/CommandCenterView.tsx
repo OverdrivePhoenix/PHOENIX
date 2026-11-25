@@ -1,24 +1,36 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send } from 'lucide-react';
+import { API_BASE, liveApi } from '../lib/liveApi';
+import { EmptyState, SourceBadge, SourceStatus, formatRelativeTime } from '../components/LiveStatus';
 
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL ||
-  (typeof window !== 'undefined' && window.location.origin && !window.location.origin.includes('5173')
-    ? window.location.origin
-    : 'http://localhost:8000');
+interface LiveSummary {
+  projects_tracked: number;
+  need_attention: number;
+  open_prs: number;
+  ci_failing: number;
+  most_active_project?: string | null;
+  most_active_branch?: string | null;
+  last_sync?: string | null;
+  source_status?: Record<string, SourceStatus>;
+}
+
+interface LiveEventItem {
+  id: number;
+  ts: string;
+  source: string;
+  kind: string;
+  severity: string;
+  project_id?: string | null;
+  payload: Record<string, any>;
+  seen: boolean;
+}
 
 interface CommandCenterViewProps {
-  currentProject: any;
-  tasks: any[];
-  agents: any[];
-  approvals: any[];
-  executionLogs: any[];
-  dailySpend: number;
-  sessionUptime: string;
-  onApproveAction: (approvalId: string, token: string) => void;
-  onDenyAction: (approvalId: string, token: string) => void;
+  summary: LiveSummary;
+  events: LiveEventItem[];
   onTriggerPlanModal: () => void;
   onSendCommand?: (transcript: string) => Promise<{ intent: string; reply: string }>;
+  onOpenSettings?: () => void;
 }
 
 interface ChatTurn {
@@ -29,25 +41,12 @@ interface ChatTurn {
 }
 
 export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
-  currentProject,
-  tasks,
-  agents,
-  approvals,
-  executionLogs,
-  sessionUptime,
+  summary,
+  events,
   onTriggerPlanModal,
-  onSendCommand
+  onSendCommand,
+  onOpenSettings
 }) => {
-  const pendingApprovals = approvals.filter((a) => a.status === 'pending');
-  const activeTask = tasks.find((t) => t.status === 'in_progress') || tasks[0] || {
-    title: 'Stripe Webhook & Idempotency',
-    feature_branch: 'feat/checkout-flow'
-  };
-  const blockedTasks = tasks.filter((t) => t.status === 'blocked');
-  const activeAgentsCount = agents.filter((a) => a.status === 'running' || a.status === 'active').length;
-  const totalAgentsCount = agents.length || 6;
-
-  // Typed Command Bar State
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [turns, setTurns] = useState<ChatTurn[]>([]);
@@ -80,7 +79,7 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    const maxH = 4 * 20 + 16; // max 4 lines
+    const maxH = 4 * 20 + 16;
     el.style.height = `${Math.min(el.scrollHeight, maxH)}px`;
   };
 
@@ -173,121 +172,130 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
 
   return (
     <div className="flex-1 h-[calc(100vh-3rem)] overflow-y-auto bg-[#0A0A0B] p-8 flex flex-col gap-6 font-sans text-[#F2F2F2]">
-      {/* Section Header: Title + Single Primary Action */}
+      {/* Section Header */}
       <div className="flex items-center justify-between gap-6 pb-4 border-b border-white/[0.08] shrink-0">
         <div className="min-w-0">
           <h1 className="text-[13px] font-mono uppercase tracking-[0.08em] text-[#8A8A8E] whitespace-nowrap truncate">
             Command Center
           </h1>
-          <p
-            className="text-[11px] font-mono text-[#55555A] mt-1 whitespace-nowrap truncate tabular-nums"
-            title={`${currentProject?.name || 'College Canteen App'} · Uptime ${sessionUptime}`}
-          >
-            {currentProject?.name || 'College Canteen App'} · UPTIME {sessionUptime}
-          </p>
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            <SourceBadge label="Antigravity" status={summary.source_status?.antigravity} onClick={onOpenSettings} />
+            <SourceBadge label="GitHub" status={summary.source_status?.github} onClick={onOpenSettings} />
+            <span className="text-[11px] font-mono text-[#55555A] tabular-nums">
+              updated {formatRelativeTime(summary.last_sync)}
+            </span>
+          </div>
         </div>
 
-        <button
-          onClick={onTriggerPlanModal}
-          className="px-4 py-2 rounded-[4px] bg-[#F2F2F2] text-[#0A0A0B] text-[13px] font-medium whitespace-nowrap shrink-0 hover:bg-white transition-colors duration-150"
-        >
-          Plan Milestone
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => liveApi.post('/live/sync', { source: 'all' }).catch(() => {})}
+            className="px-3 py-2 rounded-[4px] bg-[#111113] border border-white/[0.10] text-[12px] font-mono text-[#F2F2F2] hover:border-white/[0.22]"
+          >
+            Sync
+          </button>
+          <button
+            onClick={onTriggerPlanModal}
+            className="px-4 py-2 rounded-[4px] bg-[#F2F2F2] text-[#0A0A0B] text-[13px] font-medium whitespace-nowrap hover:bg-white transition-colors duration-150"
+          >
+            Plan Milestone
+          </button>
+        </div>
       </div>
 
-      {/* 4 Numbers: Single Row Separated by Vertical Hairlines */}
+      {/* 4 Real Computed Stats */}
       <section className="grid grid-cols-4 bg-[#111113] border border-white/[0.08] rounded-[4px] divide-x divide-white/[0.08] shrink-0">
         <div className="p-6 flex flex-col gap-2 min-w-0">
-          <span className="text-[11px] font-mono uppercase tracking-[0.06em] text-[#8A8A8E] whitespace-nowrap truncate" title="ACTIVE TASK">
-            ACTIVE TASK
-          </span>
-          <span className="font-display text-[32px] leading-none text-[#F2F2F2] tabular-nums whitespace-nowrap" title="1 Active Task">
-            01
-          </span>
-          <span className="text-[11px] font-mono text-[#55555A] whitespace-nowrap truncate" title={activeTask.title}>
-            {activeTask.title}
-          </span>
-        </div>
-
-        <div className="p-6 flex flex-col gap-2 min-w-0">
-          <span className="text-[11px] font-mono uppercase tracking-[0.06em] text-[#8A8A8E] whitespace-nowrap truncate" title="FLEET">
-            FLEET
+          <span className="text-[11px] font-mono uppercase tracking-[0.06em] text-[#8A8A8E] whitespace-nowrap truncate">
+            PROJECTS TRACKED
           </span>
           <span className="font-display text-[32px] leading-none text-[#F2F2F2] tabular-nums whitespace-nowrap">
-            {String(activeAgentsCount || 2).padStart(2, '0')}/{String(totalAgentsCount).padStart(2, '0')}
+            {String(summary.projects_tracked).padStart(2, '0')}
           </span>
-          <span className="text-[11px] font-mono text-[#55555A] whitespace-nowrap truncate" title="SWE · QA ACTIVE">
-            SWE · QA ACTIVE
-          </span>
-        </div>
-
-        <div className="p-6 flex flex-col gap-2 min-w-0">
-          <span className="text-[11px] font-mono uppercase tracking-[0.06em] text-[#8A8A8E] whitespace-nowrap truncate" title="BLOCKED">
-            BLOCKED
-          </span>
-          <span className={`font-display text-[32px] leading-none tabular-nums whitespace-nowrap ${blockedTasks.length > 0 ? 'text-[#FF3B30]' : 'text-[#F2F2F2]'}`}>
-            {String(blockedTasks.length).padStart(2, '0')}
-          </span>
-          <span className="text-[11px] font-mono text-[#55555A] whitespace-nowrap truncate" title={blockedTasks[0]?.title || 'PIPELINE CLEAR'}>
-            {blockedTasks[0]?.title || 'PIPELINE CLEAR'}
+          <span className="text-[11px] font-mono text-[#55555A] whitespace-nowrap truncate">
+            {summary.most_active_project || 'No workspace active'}
           </span>
         </div>
 
         <div className="p-6 flex flex-col gap-2 min-w-0">
-          <span className="text-[11px] font-mono uppercase tracking-[0.06em] text-[#8A8A8E] whitespace-nowrap truncate" title="APPROVALS">
-            APPROVALS
+          <span className="text-[11px] font-mono uppercase tracking-[0.06em] text-[#8A8A8E] whitespace-nowrap truncate">
+            NEED ATTENTION
           </span>
-          <span className={`font-display text-[32px] leading-none tabular-nums whitespace-nowrap ${pendingApprovals.length > 0 ? 'text-[#FF3B30]' : 'text-[#F2F2F2]'}`}>
-            {String(pendingApprovals.length).padStart(2, '0')}
+          <span className={`font-display text-[32px] leading-none tabular-nums whitespace-nowrap ${summary.need_attention > 0 ? 'text-[#FF3B30]' : 'text-[#F2F2F2]'}`}>
+            {String(summary.need_attention).padStart(2, '0')}
           </span>
-          <span
-            className={`text-[11px] font-mono whitespace-nowrap truncate ${pendingApprovals.length > 0 ? 'text-[#FF3B30]' : 'text-[#55555A]'}`}
-            title={pendingApprovals[0]?.action || 'ZERO-TRUST CLEAR'}
-          >
-            {pendingApprovals[0]?.action || 'ZERO-TRUST CLEAR'}
+          <span className="text-[11px] font-mono text-[#55555A] whitespace-nowrap truncate">
+            {summary.need_attention > 0 ? 'UNSEEN OR FAILING' : 'ALL CLEAR'}
+          </span>
+        </div>
+
+        <div className="p-6 flex flex-col gap-2 min-w-0">
+          <span className="text-[11px] font-mono uppercase tracking-[0.06em] text-[#8A8A8E] whitespace-nowrap truncate">
+            OPEN PRS
+          </span>
+          <span className="font-display text-[32px] leading-none text-[#F2F2F2] tabular-nums whitespace-nowrap">
+            {String(summary.open_prs).padStart(2, '0')}
+          </span>
+          <span className="text-[11px] font-mono text-[#55555A] whitespace-nowrap truncate">
+            GITHUB REPOSITORIES
+          </span>
+        </div>
+
+        <div className="p-6 flex flex-col gap-2 min-w-0">
+          <span className="text-[11px] font-mono uppercase tracking-[0.06em] text-[#8A8A8E] whitespace-nowrap truncate">
+            CI FAILING
+          </span>
+          <span className={`font-display text-[32px] leading-none tabular-nums whitespace-nowrap ${summary.ci_failing > 0 ? 'text-[#FF3B30]' : 'text-[#F2F2F2]'}`}>
+            {String(summary.ci_failing).padStart(2, '0')}
+          </span>
+          <span className={`text-[11px] font-mono whitespace-nowrap truncate ${summary.ci_failing > 0 ? 'text-[#FF3B30]' : 'text-[#55555A]'}`}>
+            {summary.ci_failing > 0 ? 'DEFAULT BRANCH RED' : 'CHECKS NOMINAL'}
           </span>
         </div>
       </section>
 
-      {/* ONE Live Execution Stream List */}
+      {/* ONE Live Event Stream */}
       <section className="flex-1 min-h-[140px] flex flex-col">
         <div className="flex items-center justify-between pb-3 border-b border-white/[0.08] shrink-0">
           <span className="text-[11px] font-mono uppercase tracking-[0.08em] text-[#8A8A8E] whitespace-nowrap">
-            Execution Stream
+            Live Event Stream
           </span>
           <span className="text-[11px] font-mono tabular-nums text-[#55555A] whitespace-nowrap">
-            {executionLogs.length} EVENTS
+            {events.length} EVENTS
           </span>
         </div>
 
         <div className="flex-1 overflow-y-auto bg-[#111113] border border-t-0 border-white/[0.08] rounded-b-[4px] divide-y divide-white/[0.06]">
-          {executionLogs.length === 0 ? (
-            <div className="p-4 text-[13px] font-mono text-[#55555A]">
-              Waiting for agent execution events...
-            </div>
+          {events.length === 0 ? (
+            <EmptyState
+              title="No transition events yet"
+              description="PHOENIX monitors Antigravity workspaces and GitHub repositories silently after baseline sync and records changes here."
+            />
           ) : (
-            executionLogs.map((log) => {
-              const isAlert = log.level === 'error' || log.level === 'warn';
+            events.map((ev) => {
+              const isAlert = ev.severity === 'urgent' || ev.severity === 'attention';
               return (
                 <div
-                  key={log.id}
+                  key={ev.id}
                   className="px-6 py-2.5 flex items-center gap-4 text-[13px] hover:bg-white/[0.02] transition-colors duration-150"
                 >
-                  <span className="text-[11px] font-mono tabular-nums text-[#55555A] shrink-0 w-16">
-                    {log.created_at?.slice(11, 19) || '--:--:--'}
+                  <span className="text-[11px] font-mono tabular-nums text-[#55555A] shrink-0 w-20">
+                    {formatRelativeTime(ev.ts)}
                   </span>
                   <span
-                    className={`text-[11px] font-mono uppercase px-2 py-0.5 rounded-[4px] border shrink-0 w-20 text-center truncate ${
-                      isAlert
+                    className={`text-[11px] font-mono uppercase px-2 py-0.5 rounded-[4px] border shrink-0 w-24 text-center truncate ${
+                      ev.severity === 'urgent'
                         ? 'text-[#FF3B30] border-[#FF3B30]/35 bg-[#FF3B30]/10'
+                        : isAlert
+                        ? 'text-[#F2F2F2] border-white/[0.15] bg-[#0A0A0B]'
                         : 'text-[#8A8A8E] border-white/[0.08] bg-[#0A0A0B]'
                     }`}
-                    title={log.agent_id}
                   >
-                    {log.agent_id}
+                    {ev.source}
                   </span>
-                  <span className="text-[13px] text-[#F2F2F2] truncate min-w-0" title={log.message}>
-                    {log.message}
+                  <span className="text-[13px] text-[#F2F2F2] truncate min-w-0">
+                    {ev.payload?.message || ev.kind}
                   </span>
                 </div>
               );

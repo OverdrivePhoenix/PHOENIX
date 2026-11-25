@@ -10,8 +10,8 @@ interface DynamicIslandSuiteViewProps {
 }
 
 export const DynamicIslandSuiteView: React.FC<DynamicIslandSuiteViewProps> = ({
-  currentProjectName = 'College Canteen App',
-  dailySpend = 18.42,
+  currentProjectName = 'No active project',
+  dailySpend = 0,
   onApproveAction,
   onDenyAction,
   onOpenVoice,

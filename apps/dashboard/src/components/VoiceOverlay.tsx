@@ -13,8 +13,10 @@ interface VoiceOverlayProps {
   isStandaloneOverlay?: boolean;
   onCloseOverlay?: () => void;
   onOpenCommandCenter?: () => void;
-  currentProjectName?: string;
+  currentProjectName?: string | null;
   activeAgent?: string;
+  needAttention?: number;
+  lastSync?: string | null;
   pendingApproval?: {
     id: string;
     action: string;
@@ -49,10 +51,11 @@ const API_BASE =
 
 export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
   onOpenCommandCenter,
-  currentProjectName = 'College Canteen App',
-  activeAgent = 'PHOENIX · SWE-03',
+  currentProjectName = null,
+  activeAgent = 'PHOENIX',
+  needAttention = 0,
+  lastSync = null,
   pendingApproval = null,
-  dailySpend = 18.42,
   isEmergencyPaused = false,
   onApproveAction,
   onDenyAction,
@@ -388,17 +391,17 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
             minWidth: 0
           }}
         >
-          {/* 1. IDLE (200 × 36): status dot + PHOENIX · SWE-03 + mini orb */}
+          {/* 1. IDLE (200 × 36): status dot + PHOENIX + mini orb */}
           {notchState === 'idle' && (
             <div className="w-full h-full flex items-center justify-between gap-2 min-w-0">
               <div className="flex items-center gap-2 min-w-0">
                 <span
                   className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                    pendingApproval || isEmergencyPaused ? 'bg-[#FF3B30]' : 'bg-[#F2F2F2]'
+                    pendingApproval || needAttention > 0 || isEmergencyPaused ? 'bg-[#FF3B30]' : 'bg-[#F2F2F2]'
                   }`}
                 />
                 <span className="text-[11px] font-mono font-medium tracking-wider text-[#F2F2F2] whitespace-nowrap overflow-hidden text-ellipsis min-w-0">
-                  {pendingApproval ? 'GATE REQ' : activeAgent}
+                  {pendingApproval ? 'GATE REQ' : needAttention > 0 ? `${needAttention} ATTN` : activeAgent}
                 </span>
               </div>
               <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 bg-[#0A0A0B]">
@@ -420,27 +423,27 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
             </div>
           )}
 
-          {/* 2. HOVER (360 × 84): active task + status + budget readout ($18.42) */}
+          {/* 2. HOVER (360 × 84): most active project + attention count + last-sync age */}
           {notchState === 'hover' && (
             <div className="w-full h-full flex items-center justify-between gap-3 min-w-0">
               <div className="flex flex-col min-w-0 flex-1">
                 <div className="flex items-center gap-2 min-w-0">
                   <span
                     className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                      pendingApproval || isEmergencyPaused ? 'bg-[#FF3B30]' : 'bg-[#F2F2F2]'
+                      pendingApproval || needAttention > 0 || isEmergencyPaused ? 'bg-[#FF3B30]' : 'bg-[#F2F2F2]'
                     }`}
                   />
                   <span className="text-[11px] font-mono uppercase text-[#8A8A8E] whitespace-nowrap overflow-hidden text-ellipsis min-w-0">
-                    {activeAgent} · {isEmergencyPaused ? 'PAUSED' : 'ACTIVE'}
+                    {isEmergencyPaused ? 'PAUSED' : lastSync ? `SYNCED ${new Date(lastSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'LIVE'}
                   </span>
                 </div>
                 <span className="text-[13px] font-sans text-[#F2F2F2] whitespace-nowrap overflow-hidden text-ellipsis min-w-0 mt-1">
-                  {currentProjectName}
+                  {currentProjectName || 'No active workspace'}
                 </span>
               </div>
               <div className="flex items-center gap-2.5 shrink-0">
-                <span className="text-[12px] font-mono tabular-nums text-[#F2F2F2] whitespace-nowrap">
-                  ${dailySpend.toFixed(2)}
+                <span className={`text-[12px] font-mono tabular-nums whitespace-nowrap ${needAttention > 0 ? 'text-[#FF3B30]' : 'text-[#F2F2F2]'}`}>
+                  {needAttention} attn
                 </span>
                 <div className="w-6 h-6 rounded-full overflow-hidden shrink-0 bg-[#0A0A0B]">
                   <Strands
@@ -588,12 +591,12 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
               <div className="flex flex-col min-w-0 flex-1 justify-center">
                 <span
                   className="text-[13px] font-medium text-[#F2F2F2] whitespace-nowrap overflow-hidden text-ellipsis min-w-0"
-                  title={pendingApproval?.action || 'Cloud Resource Provisioning'}
+                  title={pendingApproval?.action || 'No pending approval'}
                 >
-                  {pendingApproval?.action || 'Cloud Resource Provisioning (Redis Cluster)'}
+                  {pendingApproval?.action || 'No pending approval'}
                 </span>
                 <span className="text-[11px] font-mono text-[#8A8A8E] whitespace-nowrap overflow-hidden text-ellipsis min-w-0 mt-1">
-                  Risk level: {(pendingApproval?.risk_level || 'MEDIUM').toUpperCase()} · Guardrail: Enforced
+                  Risk level: {(pendingApproval?.risk_level || 'NONE').toUpperCase()} · Guardrail: Enforced
                 </span>
               </div>
 
