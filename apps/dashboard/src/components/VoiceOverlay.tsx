@@ -77,6 +77,24 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
     }
   };
 
+  // Regression guard: verify WebView viewport matches DIP window bounds on load & resize
+  useEffect(() => {
+    const checkViewport = () => {
+      const minW = STATE_DIMENSIONS.approval.width;
+      const minH = STATE_DIMENSIONS.approval.height;
+      if (window.innerWidth < minW || window.innerHeight < minH) {
+        const msg = `Overlay viewport clipped: ${window.innerWidth}x${window.innerHeight} < ${minW}x${minH} (dpr=${window.devicePixelRatio})`;
+        console.error(msg);
+        try {
+          (window as any).pywebview?.api?.log_error(msg);
+        } catch {}
+      }
+    };
+    checkViewport();
+    window.addEventListener('resize', checkViewport);
+    return () => window.removeEventListener('resize', checkViewport);
+  }, []);
+
   // Listen to main-process tween lifecycle events
   useEffect(() => {
     const onLeave = () => setIsReady(false);

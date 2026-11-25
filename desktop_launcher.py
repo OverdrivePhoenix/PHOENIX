@@ -34,6 +34,7 @@ else:
 
 # Setup logging
 LOG_FILE = os.path.join(APP_DIR, "phoenix_runtime.log")
+DIAG_FILE = os.path.join(APP_DIR, "phoenix_runtime.txt")
 logging.basicConfig(
     filename=LOG_FILE,
     level=logging.INFO,
@@ -45,6 +46,36 @@ def log_debug(msg: str):
         logging.info(msg)
     except Exception:
         pass
+
+def log_diag(msg: str):
+    log_debug(msg)
+    try:
+        with open(DIAG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
+    except Exception:
+        pass
+
+def init_dpi_awareness():
+    """Must run at the very top of entry point before importing/creating any GUI windows."""
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        user32.SetProcessDpiAwarenessContext.argtypes = [ctypes.c_void_p]
+        user32.SetProcessDpiAwarenessContext.restype = ctypes.c_bool
+        ok = user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))  # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+        if not ok:
+            err = ctypes.windll.kernel32.GetLastError()
+            log_diag(f"dpi awareness set(-4): False (err={err}); trying SetProcessDpiAwareness(2)")
+            try:
+                ctypes.windll.shcore.SetProcessDpiAwareness(2)
+            except Exception:
+                user32.SetProcessDPIAware()
+        else:
+            log_diag("dpi awareness set: True (PER_MONITOR_AWARE_V2 = -4)")
+    except Exception as e:
+        log_diag(f"dpi awareness notice: {e}")
+
+init_dpi_awareness()
 
 # Ensure app package is in sys.path
 api_app_dir = os.path.join(BUNDLE_DIR, "app")
@@ -94,38 +125,155 @@ tween_cancel = False
 hover_timer = None
 
 
-def get_window_dpi_scale(hwnd: int) -> float:
+last_scale = 1.0
+
+
+def scale_of(hwnd: int) -> float:
     try:
         import ctypes
-        dpi = ctypes.windll.user32.GetDpiForWindow(hwnd)
-        return dpi / 96.0 if dpi > 0 else 1.0
+        from ctypes import wintypes
+        dpi = ctypes.windll.user32.GetDpiForWindow(wintypes.HWND(hwnd)) or 96
+        return dpi / 96.0
     except Exception:
         return 1.0
 
 
-def set_notch_region(hwnd: int, w: int, h: int):
-    """Clips the opaque native window to the notch silhouette (square top, rounded bottom) using Win32 SetWindowRgn."""
+def px(dip: float, s: float) -> int:
+    return int(round(dip * s))
+
+
+def get_primary_monitor_rect_physical():
+    import ctypes
+    from ctypes import Structure, c_int, wintypes
+
+    class RECT(Structure):
+        _fields_ = [("left", c_int), ("top", c_int), ("right", c_int), ("bottom", c_int)]
+
+    class MONITORINFO(Structure):
+        _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", RECT), ("rcWork", RECT), ("dwFlags", wintypes.DWORD)]
+
+    user32 = ctypes.windll.user32
+    pt = wintypes.POINT(0, 0)
+    hmon = user32.MonitorFromPoint(pt, 1)
+    mi = MONITORINFO()
+    mi.cbSize = ctypes.sizeof(MONITORINFO)
+    if user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
+        return mi.rcMonitor
+    return RECT(0, 0, user32.GetSystemMetrics(0), user32.GetSystemMetrics(1))
+
+
+def place_overlay(hwnd: int) -> float:
+    """Positions and sizes the overlay window in physical px from DIP tokens, flush at monitor rcMonitor top-center."""
+    global last_scale
     try:
         import ctypes
+        from ctypes import wintypes, c_int, c_void_p
+        user32 = ctypes.windll.user32
+        user32.SetWindowPos.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int, wintypes.UINT]
+        user32.SetWindowPos.restype = wintypes.BOOL
+
+        mon = get_primary_monitor_rect_physical()
+        HWND_TOPMOST = c_void_p(-1)
+        FLAGS = 0x0010 | 0x0040  # SWP_NOACTIVATE | SWP_SHOWWINDOW
+
+        # Move to target monitor first so GetDpiForWindow reflects that monitor
+        user32.SetWindowPos(hwnd, HWND_TOPMOST, mon.left, mon.top, 1, 1, FLAGS)
+        s = scale_of(hwnd)
+        last_scale = s
+        W, H = px(OVERLAY_WIDTH, s), px(OVERLAY_HEIGHT, s)
+        X = mon.left + (mon.right - mon.left - W) // 2
+        Y = mon.top  # rcMonitor.top -> flush with top bezel
+        user32.SetWindowPos(hwnd, HWND_TOPMOST, X, Y, W, H, FLAGS)
+
+        if voice_overlay_window and hasattr(voice_overlay_window, "native") and voice_overlay_window.native:
+            try:
+                import webview.platforms.winforms as wf
+                form = voice_overlay_window.native
+                def _sync_dock():
+                    if hasattr(form, "webview") and form.webview is not None:
+                        form.webview.Dock = wf.WinForms.DockStyle.Fill
+                if form.InvokeRequired:
+                    form.Invoke(wf.Func[wf.Type](_sync_dock))
+                else:
+                    _sync_dock()
+            except Exception:
+                pass
+        return s
+    except Exception as e:
+        log_diag(f"place_overlay error: {e}")
+        return 1.0
+
+
+def log_overlay_diagnostics(tag: str, hwnd: int, w_dip: int, h_dip: int):
+    """Logs DPI, physical Window/Client rects, awareness context, and JS viewport dimensions to phoenix_runtime.txt."""
+    try:
+        import ctypes
+        from ctypes import Structure, c_int, wintypes
+        user32 = ctypes.windll.user32
+
+        class RECT(Structure):
+            _fields_ = [("left", c_int), ("top", c_int), ("right", c_int), ("bottom", c_int)]
+
+        dpi = user32.GetDpiForWindow(wintypes.HWND(hwnd)) or 96
+        s = dpi / 96.0
+        wr, cr = RECT(), RECT()
+        user32.GetWindowRect(wintypes.HWND(hwnd), ctypes.byref(wr))
+        user32.GetClientRect(wintypes.HWND(hwnd), ctypes.byref(cr))
+
+        awareness = -1
+        try:
+            user32.GetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+            user32.GetAwarenessFromDpiAwarenessContext.argtypes = [ctypes.c_void_p]
+            user32.GetAwarenessFromDpiAwarenessContext.restype = c_int
+            ctx = user32.GetThreadDpiAwarenessContext()
+            awareness = user32.GetAwarenessFromDpiAwarenessContext(ctx)
+        except Exception:
+            pass
+
+        js_info = None
+        try:
+            if voice_overlay_window:
+                js_info = voice_overlay_window.evaluate_js("[window.innerWidth, window.innerHeight, window.devicePixelRatio]")
+        except Exception:
+            pass
+
+        r_dip = min(24, h_dip // 2)
+        log_diag(
+            f"[DIAG:{tag}] dpi={dpi} scale={s:.2f} awareness={awareness} "
+            f"WinRect=({wr.left},{wr.top},{wr.right - wr.left}x{wr.bottom - wr.top}) "
+            f"ClientRect=({cr.right}x{cr.bottom}) "
+            f"DIP_win=({OVERLAY_WIDTH}x{OVERLAY_HEIGHT}) Phys_win=({px(OVERLAY_WIDTH, s)}x{px(OVERLAY_HEIGHT, s)}) "
+            f"DIP_state=({w_dip}x{h_dip},r={r_dip}) Phys_rgn=({px(w_dip, s)}x{px(h_dip, s)},R={px(r_dip, s)}) "
+            f"JS={js_info}"
+        )
+    except Exception as e:
+        log_diag(f"[DIAG:{tag}] error: {e}")
+
+
+def set_notch_region(hwnd: int, w_dip: int, h_dip: int):
+    """Clips the opaque native window to the notch silhouette (square top, rounded bottom) in physical px."""
+    try:
+        import ctypes
+        from ctypes import wintypes
         gdi32 = ctypes.windll.gdi32
         user32 = ctypes.windll.user32
 
-        scale = get_window_dpi_scale(hwnd)
-        sw = max(1, int(round(w * scale)))
-        sh = max(1, int(round(h * scale)))
-        s_win_w = int(round(OVERLAY_WIDTH * scale))
-        r = min(int(round(24 * scale)), sh // 2)
-        x0 = round((s_win_w - sw) / 2)
+        s = scale_of(hwnd)
+        Wn = max(1, px(w_dip, s))
+        Hn = max(1, px(h_dip, s))
+        r_dip = min(24, h_dip // 2)
+        R = px(r_dip, s)
+        x0 = (px(OVERLAY_WIDTH, s) - Wn) // 2
 
-        r_round = gdi32.CreateRoundRectRgn(x0, -r, x0 + sw + 1, sh + 1, r * 2, r * 2)
-        r_clip = gdi32.CreateRectRgn(x0, 0, x0 + sw, sh)
-        r_final = gdi32.CreateRectRgn(0, 0, 0, 0)
-        gdi32.CombineRgn(r_final, r_round, r_clip, 1)  # RGN_AND
-        gdi32.DeleteObject(r_round)
-        gdi32.DeleteObject(r_clip)
+        rnd = gdi32.CreateRoundRectRgn(x0, -R, x0 + Wn + 1, Hn + 1, 2 * R, 2 * R)
+        clip = gdi32.CreateRectRgn(x0, 0, x0 + Wn, Hn)
+        out = gdi32.CreateRectRgn(0, 0, 0, 0)
+        gdi32.CombineRgn(out, rnd, clip, 1)  # RGN_AND
+        gdi32.DeleteObject(rnd)
+        gdi32.DeleteObject(clip)
 
-        if not user32.SetWindowRgn(hwnd, r_final, True):
-            gdi32.DeleteObject(r_final)
+        if not user32.SetWindowRgn(wintypes.HWND(hwnd), out, True):
+            gdi32.DeleteObject(out)
     except Exception as e:
         log_debug(f"SetWindowRgn notice: {e}")
 
@@ -180,6 +328,7 @@ def transition_island_state(next_state: str):
                     )
                 except Exception:
                     pass
+                log_overlay_diagnostics(f"state:{next_state}", hwnd, cur_dim["w"], cur_dim["h"])
         finally:
             tween_busy = False
 
@@ -224,6 +373,10 @@ class NotchApi:
 
     def exit_app(self):
         shutdown()
+        return True
+
+    def log_error(self, msg: str):
+        log_diag(f"[RENDERER_ERROR] {msg}")
         return True
 
 
@@ -401,56 +554,40 @@ def start_local_node_server(port: int = 8001):
         log_debug(f"Local Node Server Exception: {e}\n{traceback.format_exc()}")
 
 
-def init_dpi_awareness():
-    """Configures Windows Per-Monitor DPI Awareness so notch stays pixel-perfect on scaled displays."""
-    try:
-        import ctypes
-        try:
-            ctypes.windll.shcore.SetProcessDpiAwareness(2)  # Per-Monitor DPI aware
-        except Exception:
-            ctypes.windll.user32.SetProcessDPIAware()
-    except Exception:
-        pass
-
-
-def get_screen_metrics():
-    """Retrieves primary monitor resolution."""
-    try:
-        import ctypes
-        user32 = ctypes.windll.user32
-        screen_w = user32.GetSystemMetrics(0)
-        screen_h = user32.GetSystemMetrics(1)
-        return screen_w, screen_h
-    except Exception:
-        return 1920, 1080
-
-
 def set_notch_geometry(expanded: bool = False):
-    """Keeps the native notch overlay window fixed at top-center; animations occur in-DOM."""
+    """Keeps the native notch overlay window sized and centered in physical px from DIP tokens."""
     try:
         import ctypes
-        from ctypes import wintypes, c_int, c_void_p
         hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Notch")
         if not hwnd:
             hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Voice Overlay")
         if hwnd:
-            user32 = ctypes.windll.user32
-            user32.SetWindowPos.argtypes = [c_void_p, c_void_p, c_int, c_int, c_int, c_int, wintypes.UINT]
-            user32.SetWindowPos.restype = wintypes.BOOL
-
-            screen_w, _ = get_screen_metrics()
-            w = OVERLAY_WIDTH
-            h = OVERLAY_HEIGHT
-            x = max(0, (screen_w - w) // 2)
-            y = 0
-
-            HWND_TOPMOST = c_void_p(-1)
-            SWP_SHOWWINDOW = 0x0040
-            SWP_NOACTIVATE = 0x0010
-            user32.SetWindowPos(hwnd, HWND_TOPMOST, x, y, w, h, SWP_SHOWWINDOW | SWP_NOACTIVATE)
-            log_debug(f"Fixed overlay geometry maintained at ({x}, {y}, {w}, {h})")
+            place_overlay(hwnd)
+            set_notch_region(hwnd, cur_dim["w"], cur_dim["h"])
     except Exception as e:
-        log_debug(f"Notch geometry notice: {e}")
+        log_diag(f"Notch geometry notice: {e}")
+
+
+def start_dpi_monitor():
+    """Polls scale_of(hwnd) and monitor bounds; re-places and re-regions overlay on DPI or display change."""
+    last_mon = None
+    while not is_quitting:
+        try:
+            import ctypes
+            hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Notch")
+            if hwnd:
+                s = scale_of(hwnd)
+                mon = get_primary_monitor_rect_physical()
+                mon_tuple = (mon.left, mon.top, mon.right, mon.bottom)
+                if abs(s - last_scale) > 0.01 or (last_mon is not None and mon_tuple != last_mon):
+                    log_diag(f"DPI/Display change detected: scale {last_scale}->{s}, mon {last_mon}->{mon_tuple}")
+                    place_overlay(hwnd)
+                    set_notch_region(hwnd, cur_dim["w"], cur_dim["h"])
+                    log_overlay_diagnostics("dpi_change", hwnd, cur_dim["w"], cur_dim["h"])
+                last_mon = mon_tuple
+        except Exception:
+            pass
+        time.sleep(0.8)
 
 
 def show_dashboard():
@@ -561,13 +698,14 @@ def configure_voice_overlay_window(expanded: bool = False):
                 except Exception as e:
                     log_debug(f"Form opaque background notice: {e}")
 
-            set_notch_geometry(False)
+            place_overlay(hwnd)
             set_notch_region(hwnd, cur_dim["w"], cur_dim["h"])
             if DEBUG_SHAPE:
                 try:
                     voice_overlay_window.evaluate_js("window.__PHOENIX_DEBUG_SHAPE__ = true;")
                 except Exception:
                     pass
+            log_overlay_diagnostics("startup", hwnd, cur_dim["w"], cur_dim["h"])
     except Exception as e:
         log_debug(f"Voice overlay setup notice: {e}")
 
@@ -772,11 +910,11 @@ def main():
     target_url = "http://127.0.0.1:8000"
     overlay_url = "http://127.0.0.1:8000/#voice-overlay"
 
-    # 5. Compute primary screen top-center position for fixed transparent overlay canvas
-    screen_w, _ = get_screen_metrics()
+    # 5. Initial DIP dimensions (pywebview WinForms multiplies initial_width/height/x/y by self._scale)
+    # place_overlay() will immediately position it on rcMonitor physical px after HWND creation.
     init_pill_w = OVERLAY_WIDTH
     init_pill_h = OVERLAY_HEIGHT
-    init_pill_x = max(0, (screen_w - init_pill_w) // 2)
+    init_pill_x = 0
     init_pill_y = 0
 
     # 6. Launch Native Desktop Windows using pywebview (Edge WebView2)
@@ -832,10 +970,11 @@ def main():
 
     voice_overlay_window.events.closed += on_notch_closed
 
-    # 8. Initialize System Tray, Global Hotkey & IPC Listener
+    # 8. Initialize System Tray, Global Hotkey, DPI Monitor & IPC Listener
     init_system_tray(main_window, voice_overlay_window)
     threading.Thread(target=start_tray_ipc_listener, args=(main_window, voice_overlay_window), daemon=True).start()
     threading.Thread(target=start_global_hotkey_listener, daemon=True).start()
+    threading.Thread(target=start_dpi_monitor, daemon=True).start()
 
     # 9. Start pywebview event loop with Dynamic Island as primary window
     try:
