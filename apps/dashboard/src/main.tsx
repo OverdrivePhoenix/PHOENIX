@@ -30,36 +30,6 @@ export function App() {
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
   const [sessionUptime, setSessionUptime] = useState('06h 42m 19s');
 
-  // Butler vocal greeting upon UI activation: "System online, Sir."
-  useEffect(() => {
-    if ('speechSynthesis' in window) {
-      const speakActivation = () => {
-        try {
-          window.speechSynthesis.cancel();
-          const utterance = new SpeechSynthesisUtterance('System online, Sir.');
-          utterance.rate = 1.0;
-          utterance.pitch = 0.95;
-          const voices = window.speechSynthesis.getVoices();
-          const britishVoice = voices.find(
-            (v) =>
-              v.lang.startsWith('en-GB') ||
-              v.name.toLowerCase().includes('british') ||
-              v.name.toLowerCase().includes('george') ||
-              v.name.toLowerCase().includes('daniel')
-          );
-          if (britishVoice) utterance.voice = britishVoice;
-          window.speechSynthesis.speak(utterance);
-        } catch {}
-      };
-
-      if (window.speechSynthesis.getVoices().length > 0) {
-        speakActivation();
-      } else {
-        window.speechSynthesis.onvoiceschanged = speakActivation;
-      }
-    }
-  }, []);
-
   // Initial Fetch & Refresh
   const refreshData = async () => {
     try {
@@ -361,6 +331,7 @@ export function App() {
               onApproveAction={handleApproveAction}
               onDenyAction={handleDenyAction}
               onTriggerPlanModal={() => setIsPlanModalOpen(true)}
+              onSendCommand={handleJarvisCommand}
             />
           )}
 
