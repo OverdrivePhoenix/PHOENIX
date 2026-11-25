@@ -347,11 +347,18 @@ export default function Strands({
   intro = true,
   lightMode = false,
   maxDevicePixelRatio = 2,
+  paused = false,
+  opaqueClearColor = null,
   className = '',
   style
 }) {
   const containerRef = useRef(null);
   const propsRef = useRef(null);
+  const wakeRef = useRef(null);
+
+  useEffect(() => {
+    if (!paused) wakeRef.current?.();
+  }, [paused]);
   propsRef.current = {
     colors,
     count,
@@ -379,7 +386,9 @@ export default function Strands({
     clickPulse,
     intro,
     lightMode,
-    maxDevicePixelRatio
+    maxDevicePixelRatio,
+    paused,
+    opaqueClearColor
   };
 
   useEffect(() => {
@@ -436,7 +445,11 @@ export default function Strands({
       gl.useProgram(next);
       loc = Object.fromEntries(names.map(name => [name, gl.getUniformLocation(next, name)]));
       gl.disable(gl.BLEND);
-      gl.clearColor(0, 0, 0, 0);
+      if (opaqueClearColor && Array.isArray(opaqueClearColor) && opaqueClearColor.length === 4) {
+        gl.clearColor(opaqueClearColor[0], opaqueClearColor[1], opaqueClearColor[2], opaqueClearColor[3]);
+      } else {
+        gl.clearColor(0, 0, 0, 0);
+      }
       return true;
     };
     if (!setup()) {
@@ -579,15 +592,16 @@ export default function Strands({
         Math.abs(st.hover - st.hoverTarget) < 1e-3 &&
         Math.abs(st.lean[0] - st.leanTarget[0]) < 1e-3 &&
         Math.abs(st.lean[1] - st.leanTarget[1]) < 1e-3;
-      if (st.visible && !document.hidden && !st.lost && !settled) st.raf = requestAnimationFrame(frame);
+      if (st.visible && !document.hidden && !st.lost && !settled && !p.paused) st.raf = requestAnimationFrame(frame);
     };
 
     const wake = () => {
-      if (!st.raf && st.visible && !st.lost) {
+      if (!st.raf && st.visible && !st.lost && !propsRef.current.paused) {
         st.last = 0;
         st.raf = requestAnimationFrame(frame);
       }
     };
+    wakeRef.current = wake;
 
     const local = e => {
       const r = container.getBoundingClientRect();

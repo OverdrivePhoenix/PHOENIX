@@ -1,0 +1,13 @@
+{
+  "pad": 2,
+  "window": {
+    "width": 524,
+    "height": 190
+  },
+  "states": {
+    "idle": { "width": 200, "height": 36, "radius": 18 },
+    "hover": { "width": 340, "height": 72, "radius": 24 },
+    "voice": { "width": 440, "height": 132, "radius": 24 },
+    "approval": { "width": 520, "height": 188, "radius": 24 }
+  }
+}
