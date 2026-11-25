@@ -917,7 +917,11 @@ def configure_voice_overlay_window(expanded: bool = False):
                     voice_overlay_window.evaluate_js("window.__PHOENIX_DEBUG_SHAPE__ = true;")
                 except Exception:
                     pass
-            log_overlay_diagnostics("startup", hwnd, cur_dim["w"], cur_dim["h"])
+            threading.Thread(
+                target=log_overlay_diagnostics,
+                args=("startup", hwnd, cur_dim["w"], cur_dim["h"]),
+                daemon=True
+            ).start()
     except Exception as e:
         log_debug(f"Voice overlay setup notice: {e}")
 
@@ -1054,6 +1058,132 @@ def init_system_tray(main_win, overlay_win):
         log_debug(f"System Tray notice: {exc}")
 
 
+_greeting_played = False
+
+
+def _is_master_muted() -> bool:
+    try:
+        import ctypes
+        from ctypes import wintypes
+        vol = wintypes.DWORD(0)
+        res = ctypes.windll.winmm.waveOutGetVolume(0, ctypes.byref(vol))
+        if res == 0 and vol.value == 0:
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def speak_startup_greeting():
+    """Plays a short, template-driven startup greeting once per process start using the saved voice."""
+    global _greeting_played
+    if _greeting_played:
+        return
+    _greeting_played = True
+
+    def _greet():
+        t_start = time.perf_counter()
+        try:
+            from app.settings_store import load_settings
+            cfg, source, path = load_settings()
+            log_diag(f"[voice] Loaded settings source={source} path={path} voice={cfg['voice']['id']}")
+            if not cfg.get("greeting", {}).get("enabled", True):
+                log_diag("[greet] Startup greeting disabled in settings; skipping.")
+                return
+            if _is_master_muted():
+                log_diag("[greet] System master volume is 0/muted; skipping.")
+                return
+
+            hour = time.localtime().tm_hour
+            tod = "Good morning." if hour < 12 else ("Good afternoon." if hour < 17 else "Good evening.")
+            parts = [tod]
+
+            pending_count = 0
+            try:
+                import json
+                with urllib.request.urlopen("http://127.0.0.1:8000/projects", timeout=2.0) as r:
+                    projs = json.loads(r.read().decode("utf-8"))
+                    if isinstance(projs, list) and projs and projs[0].get("name"):
+                        parts.append(f"SWE-03 is active on {projs[0]['name']}.")
+            except Exception:
+                pass
+
+            try:
+                import json
+                with urllib.request.urlopen("http://127.0.0.1:8000/approvals", timeout=2.0) as r:
+                    apprs = json.loads(r.read().decode("utf-8"))
+                    if isinstance(apprs, list):
+                        pending_count = sum(1 for a in apprs if a.get("status") == "pending")
+                        if pending_count == 1:
+                            parts.append("1 approval is waiting.")
+                        elif pending_count > 1:
+                            parts.append(f"{pending_count} approvals are waiting.")
+            except Exception:
+                pass
+
+            if time.perf_counter() - t_start > 10.0:
+                log_diag("[greet] Timed out (>10s) before synthesis; skipping.")
+                return
+
+            greeting_text = " ".join(parts)
+            v = cfg["voice"]
+            voice_id = v.get("id") or "en-GB-RyanNeural"
+            rate_pct = int(round((float(v.get("rate", 1.0)) - 1.0) * 100))
+            pitch_hz = int(round((float(v.get("pitch", 1.0)) - 1.0) * 25))
+            rate_str = f"{rate_pct:+d}%"
+            pitch_str = f"{pitch_hz:+d}Hz"
+
+            log_diag(f"[greet] autoplay=python_winsound voice={voice_id} rate={rate_str} pitch={pitch_str} text={greeting_text!r}")
+
+            transition_island_state("voice")
+            try:
+                import edge_tts, asyncio, tempfile, winsound
+                async def _synth():
+                    comm = edge_tts.Communicate(greeting_text, voice=voice_id, rate=rate_str, pitch=pitch_str)
+                    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as fp:
+                        p = fp.name
+                    await comm.save(p)
+                    return p
+
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                mp3_path = loop.run_until_complete(_synth())
+                log_diag(f"[greet] onstart voice={voice_id}")
+                try:
+                    # Convert or play via SAPI/mciSendString for mp3 since winsound only plays WAV
+                    import ctypes
+                    alias = "phx_greet"
+                    mci = ctypes.windll.winmm.mciSendStringW
+                    mci(f'close {alias}', None, 0, 0)
+                    rc = mci(f'open "{mp3_path}" type mpegvideo alias {alias}', None, 0, 0)
+                    if rc == 0:
+                        mci(f'play {alias} wait', None, 0, 0)
+                        mci(f'close {alias}', None, 0, 0)
+                        log_diag("[greet] onend status=ok")
+                    else:
+                        raise RuntimeError(f"mciSendString open rc={rc}")
+                finally:
+                    try:
+                        os.remove(mp3_path)
+                    except Exception:
+                        pass
+            except Exception as exc:
+                log_diag(f"[greet] onerror={exc}; trying SAPI fallback")
+                try:
+                    import win32com.client
+                    sp = win32com.client.Dispatch("SAPI.SpVoice")
+                    sp.Speak(greeting_text)
+                    log_diag("[greet] onend status=sapi_ok")
+                except Exception as sapi_e:
+                    log_diag(f"[greet] sapi onerror={sapi_e}")
+            finally:
+                transition_island_state("approval" if pending_count > 0 else "idle")
+        except Exception as e:
+            log_diag(f"[greet] onerror={e}")
+
+    threading.Thread(target=_greet, daemon=True).start()
+
+
 def on_window_ready(window):
     """Callback fired when the Dynamic Island overlay window is displayed."""
     log_debug("Dynamic Island displayed. Configuring notch geometry flush at top-center...")
@@ -1074,6 +1204,7 @@ def on_window_ready(window):
                 if hwnd:
                     configure_voice_overlay_window(expanded=False)
                     log_debug(f"Configured overlay HWND={hwnd} flush at top-center.")
+                    speak_startup_greeting()
                     break
             except Exception:
                 pass
@@ -1090,9 +1221,6 @@ def main():
 
     # Initialize Per-Monitor DPI awareness
     init_dpi_awareness()
-
-    # 1. Vocalize activation: "System online, Sir."
-    speak_system_online()
 
     # 2. Start Control Plane (FastAPI + React Dashboard)
     need_start_8000 = True
