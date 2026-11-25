@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
     # Infrastructure
     redis_url: str = "redis://localhost:6379/0"
-    cors_origins: str = "http://localhost:3000,http://localhost:5173,tauri://localhost"
+    cors_origins: str = "http://127.0.0.1:8000,http://localhost:8000,http://localhost:3000,http://localhost:5173,tauri://localhost"
     daily_budget_limit: float = 50.00
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

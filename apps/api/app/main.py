@@ -1,5 +1,9 @@
 import asyncio
 import io
+import logging
+import os
+import sys
+import traceback
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -8,10 +12,37 @@ from typing import Optional
 
 from .config import settings
 from .firestore_db import db
-from . import live_db, live_service
-from .live_routes import router as live_router
-from .live_security import SESSION_SECRET
-from .adapters import github_client as gh_adapter
+
+LIVE_AVAILABLE = False
+LIVE_UNAVAILABLE_REASON = ""
+SESSION_SECRET = ""
+live_db = None
+live_service = None
+live_router = None
+gh_adapter = None
+
+try:
+    from . import live_db as _live_db
+    from . import live_service as _live_service
+    from .live_routes import router as _live_router
+    from .live_security import SESSION_SECRET as _SESSION_SECRET
+    from .adapters import github_client as _gh_adapter
+    live_db = _live_db
+    live_service = _live_service
+    live_router = _live_router
+    SESSION_SECRET = _SESSION_SECRET
+    gh_adapter = _gh_adapter
+    LIVE_AVAILABLE = True
+except Exception as _live_exc:
+    LIVE_UNAVAILABLE_REASON = repr(_live_exc)
+    _tb = traceback.format_exc()
+    logging.error(f"[live] integrations unavailable: {_tb}")
+    try:
+        _app_dir = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+        with open(os.path.join(_app_dir, "phoenix_runtime.txt"), "a", encoding="utf-8") as _f:
+            _f.write(f"[live] integrations unavailable:\n{_tb}\n")
+    except Exception:
+        pass
 from .policy_engine import PolicyEngine
 from .agents.jarvis import JarvisVoiceButler
 from .agents.planner import generate_plan
@@ -40,10 +71,33 @@ _is_emergency_paused = False
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await db.initialize()
-    live_db.init_live_db()
-    asyncio.create_task(live_service.sync_antigravity(force=True))
-    if gh_adapter.get_stored_token():
-        asyncio.create_task(live_service.sync_github(force=False))
+    db_path = "unavailable"
+    kr_backend = "unavailable"
+    ps_ver = "unavailable"
+    if LIVE_AVAILABLE and live_db is not None:
+        live_db.init_live_db()
+        db_path = live_db.get_live_db_path()
+        asyncio.create_task(live_service.sync_antigravity(force=True))
+        if gh_adapter is not None:
+            kr_backend = gh_adapter.get_keyring_backend_name()
+            if gh_adapter.get_stored_token():
+                asyncio.create_task(live_service.sync_github(force=False))
+    try:
+        import psutil
+        ps_ver = getattr(psutil, "__version__", "unknown")
+    except Exception:
+        ps_ver = "unavailable"
+    summary = (
+        f"[startup] port=8000 db={db_path} live_available={LIVE_AVAILABLE} "
+        f"keyring={kr_backend} psutil={ps_ver}"
+    )
+    logging.info(summary)
+    try:
+        _app_dir = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+        with open(os.path.join(_app_dir, "phoenix_runtime.txt"), "a", encoding="utf-8") as _f:
+            _f.write(summary + "\n")
+    except Exception:
+        pass
     yield
 
 app = FastAPI(
@@ -53,18 +107,29 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+_cors_origins = list(dict.fromkeys([
+    "http://127.0.0.1:8000",
+    "http://localhost:8000",
+    *settings.cors_origin_list,
+]))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "X-Phoenix-Session", "Authorization"],
 )
-app.include_router(live_router)
+if LIVE_AVAILABLE and live_router is not None:
+    app.include_router(live_router)
 
 @app.get("/health")
 async def health():
     return {
+        "ok": True,
+        "version": "1.0.0",
+        "live_available": LIVE_AVAILABLE,
+        "live_unavailable_reason": LIVE_UNAVAILABLE_REASON or None,
         "status": "ok",
         "service": "phoenix-control-plane",
         "database": "google-cloud-firestore",
@@ -580,11 +645,12 @@ if _static_dist:
         idx_path = os.path.join(_static_dist, "index.html")
         with open(idx_path, "r", encoding="utf-8") as f:
             html = f.read()
-        meta_tag = f'<meta name="phoenix-session" content="{SESSION_SECRET}" />'
-        if "</head>" in html:
-            html = html.replace("</head>", f"  {meta_tag}\n</head>", 1)
-        else:
-            html = meta_tag + html
+        if SESSION_SECRET:
+            meta_tag = f'<meta name="phoenix-session" content="{SESSION_SECRET}" />'
+            if "</head>" in html:
+                html = html.replace("</head>", f"  {meta_tag}\n</head>", 1)
+            else:
+                html = meta_tag + html
         return HTMLResponse(content=html, headers={"Cache-Control": "no-store"})
 
     app.mount("/", StaticFiles(directory=_static_dist, html=True), name="static")

@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
 import os
-from PyInstaller.utils.hooks import copy_metadata, collect_data_files
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules, copy_metadata
 
 block_cipher = None
 
@@ -13,6 +13,29 @@ datas_list = [
     ('apps/local-node/app', 'apps/local-node/app'),
     ('apps/api/app', 'app')
 ]
+binaries_list = []
+extra_hidden = []
+
+for pkg in ("keyring", "psutil", "jaraco.classes", "win32ctypes"):
+    try:
+        d, b, h = collect_all(pkg)
+        datas_list += d
+        binaries_list += b
+        extra_hidden += h
+    except Exception:
+        pass
+
+try:
+    datas_list += copy_metadata("keyring")
+except Exception:
+    pass
+
+try:
+    extra_hidden += collect_submodules("keyring.backends")
+except Exception:
+    pass
+
+extra_hidden += ["win32ctypes.core", "win32ctypes.pywin32.win32cred", "win32ctypes.pywin32.pywintypes"]
 
 # Explicitly bundle all prompt assets and markdown files from agents package
 site_packages = os.path.abspath('apps/api/.venv/Lib/site-packages')
@@ -38,7 +61,7 @@ a = Analysis(
         os.path.abspath('.'),
         os.path.abspath('apps/api')
     ],
-    binaries=[],
+    binaries=binaries_list,
     datas=datas_list,
     hiddenimports=[
         'uvicorn',
@@ -71,7 +94,7 @@ a = Analysis(
         'app.agents.planner',
         'agents',
         'mcp'
-    ],
+    ] + extra_hidden,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

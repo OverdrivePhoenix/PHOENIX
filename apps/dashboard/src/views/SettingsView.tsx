@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { liveApi } from '../lib/liveApi';
-import { SourceBadge, SourceStatus, formatRelativeTime } from '../components/LiveStatus';
+import { apiFetch, liveApi } from '../lib/liveApi';
+import { SourceBadge, SourceStatus } from '../components/LiveStatus';
 
 const API_BASE =
   import.meta.env.VITE_API_BASE_URL ||
@@ -41,6 +41,8 @@ export const SettingsView: React.FC = () => {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [activeProviderId, setActiveProviderId] = useState<string>('edge_tts');
   const [activeVoiceId, setActiveVoiceId] = useState<string>('en-GB-RyanNeural');
+  const [savedVoiceName, setSavedVoiceName] = useState<string>('Ryan (British Butler / J.A.R.V.I.S.)');
+  const [voicesState, setVoicesState] = useState<'loading' | 'loaded' | 'error'>('loading');
   const [activeTone, setActiveTone] = useState<VoiceTone>('calm_concise');
   const [voiceRate, setVoiceRate] = useState<number>(1.0);
   const [voicePitch, setVoicePitch] = useState<number>(1.0);
@@ -56,6 +58,7 @@ export const SettingsView: React.FC = () => {
   // Live Integrations State
   const [intStatus, setIntStatus] = useState<{
     github_connected: boolean;
+    keyring_available?: boolean;
     source_status: Record<string, SourceStatus>;
     projects: any[];
     antigravity_running: boolean;
@@ -123,16 +126,18 @@ export const SettingsView: React.FC = () => {
     }, 300);
   };
 
-  // Fetch TTS Providers & canonical settings.json on mount
-  useEffect(() => {
-    Promise.all([
-      fetch(`${API_BASE}/api/tts/providers`).then((r) => r.json()).catch(() => null),
-      fetch(`${API_BASE}/api/settings`).then((r) => r.json()).catch(() => null)
-    ]).then(([provData, cfg]) => {
+  const loadVoiceSettings = async () => {
+    setVoicesState('loading');
+    try {
+      const [provData, cfg] = await Promise.all([
+        apiFetch<any>('/api/tts/providers'),
+        apiFetch<any>('/api/settings')
+      ]);
       if (provData?.providers) setProviders(provData.providers);
       if (cfg?.voice) {
         setActiveProviderId(cfg.voice.engine || 'edge_tts');
         setActiveVoiceId(cfg.voice.id || 'en-GB-RyanNeural');
+        setSavedVoiceName(cfg.voice.name || cfg.voice.id || 'en-GB-RyanNeural');
         const t = cfg.voice.tone === 'concise' ? 'calm_concise' : (cfg.voice.tone || 'calm_concise');
         setActiveTone(t as VoiceTone);
         setVoiceRate(typeof cfg.voice.rate === 'number' ? cfg.voice.rate : 1.0);
@@ -145,7 +150,15 @@ export const SettingsView: React.FC = () => {
           setVoiceNotFoundNotice('');
         }
       }
-    });
+      setVoicesState('loaded');
+    } catch {
+      setVoicesState('error');
+    }
+  };
+
+  // Fetch TTS Providers & canonical settings.json on mount
+  useEffect(() => {
+    loadVoiceSettings();
     loadIntegrations();
   }, []);
 
@@ -364,6 +377,10 @@ export const SettingsView: React.FC = () => {
                     Notice: {intStatus.source_status.github.last_error}
                   </div>
                 )}
+              </div>
+            ) : intStatus?.keyring_available === false ? (
+              <div className="p-3 rounded-[4px] bg-[#111113] border border-[#FF3B30]/40 text-xs font-mono text-[#FF3B30]">
+                Secure token storage unavailable (Windows Credential Manager / keyring backend could not be loaded). PAT entry is disabled.
               </div>
             ) : (
               <div className="flex flex-col gap-3">
@@ -623,19 +640,22 @@ export const SettingsView: React.FC = () => {
                 Selected Voice Character
               </label>
               <select
-                value={resolvedSelectVoiceId}
-                disabled={currentVoices.length === 0}
+                value={currentVoices.length === 0 ? activeVoiceId : resolvedSelectVoiceId}
+                disabled={voicesState === 'loading' || (voicesState === 'error' && currentVoices.length === 0)}
                 onChange={(e) => {
                   const vid = e.target.value;
                   setActiveVoiceId(vid);
                   setVoiceNotFoundNotice('');
                   const vObj = currentVoices.find((v) => v.id === vid);
+                  if (vObj?.name) setSavedVoiceName(vObj.name);
                   persistSettingsDebounced({ id: vid, name: vObj?.name ?? vid, lang: vObj?.language ?? 'en-GB' });
                 }}
                 className="w-full bg-surface-container-lowest border border-outline-variant/40 rounded px-3 py-2 text-on-surface text-xs focus:outline-none focus:border-primary font-mono"
               >
                 {currentVoices.length === 0 ? (
-                  <option value="">Loading voices...</option>
+                  <option value={activeVoiceId}>
+                    {voicesState === 'loading' ? 'Loading voices...' : `${savedVoiceName} (${activeVoiceId})`}
+                  </option>
                 ) : (
                   currentVoices.map((v) => (
                     <option key={v.id} value={v.id}>
@@ -644,6 +664,18 @@ export const SettingsView: React.FC = () => {
                   ))
                 )}
               </select>
+              {voicesState === 'error' && (
+                <div className="flex items-center justify-between gap-2 mt-1">
+                  <span className="text-[11px] text-[#FF3B30] font-mono">Backend unreachable.</span>
+                  <button
+                    type="button"
+                    onClick={loadVoiceSettings}
+                    className="text-[11px] font-mono text-[#F2F2F2] underline hover:text-white"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
               {(voiceNotFoundNotice || (currentVoices.length > 0 && !matchedVoice)) && (
                 <p className="text-[11px] text-[#FF3B30] font-mono mt-1">
                   {voiceNotFoundNotice || 'Saved voice not found, using default'}

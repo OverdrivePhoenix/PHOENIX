@@ -19,6 +19,72 @@ function authHeaders(extra?: Record<string, string>): Record<string, string> {
   return h;
 }
 
+export class ApiNetworkError extends Error {
+  constructor(message = 'Backend unreachable') {
+    super(message);
+    this.name = 'ApiNetworkError';
+  }
+}
+
+export class ApiHttpError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'ApiHttpError';
+    this.status = status;
+  }
+}
+
+export async function apiFetch<T = any>(
+  path: string,
+  options: RequestInit & { attachSession?: boolean } = {}
+): Promise<T> {
+  const { attachSession = false, headers, ...rest } = options;
+  const mergedHeaders: Record<string, string> = {
+    ...(headers as Record<string, string> | undefined)
+  };
+  if (attachSession) {
+    const sec = getSessionSecret();
+    if (sec) mergedHeaders['X-Phoenix-Session'] = sec;
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...rest, headers: mergedHeaders });
+  } catch (err: any) {
+    if (err instanceof TypeError) {
+      throw new ApiNetworkError('Backend unreachable');
+    }
+    throw new ApiNetworkError(err?.message || 'Backend unreachable');
+  }
+
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const txt = await res.text();
+      if (txt) {
+        try {
+          const j = JSON.parse(txt);
+          detail = j?.detail ? `HTTP ${res.status}: ${j.detail}` : `HTTP ${res.status}: ${txt}`;
+        } catch {
+          detail = `HTTP ${res.status}: ${txt}`;
+        }
+      }
+    } catch {}
+    throw new ApiHttpError(res.status, detail);
+  }
+
+  const ct = res.headers.get('content-type') || '';
+  if (ct.includes('application/json')) {
+    try {
+      return await res.json();
+    } catch {
+      throw new Error('Invalid JSON response from backend');
+    }
+  }
+  return res as unknown as T;
+}
+
 export const liveApi = {
   url(path: string): string {
     const sec = getSessionSecret();
@@ -27,39 +93,23 @@ export const liveApi = {
   },
 
   async get<T>(path: string): Promise<T> {
-    const res = await fetch(`${API_BASE}${path}`, {
-      headers: authHeaders()
-    });
-    if (!res.ok) {
-      const txt = await res.text().catch(() => '');
-      throw new Error(`HTTP ${res.status}${txt ? `: ${txt}` : ''}`);
-    }
-    return res.json();
+    return apiFetch<T>(path, { attachSession: true });
   },
 
   async post<T>(path: string, body?: unknown): Promise<T> {
-    const res = await fetch(`${API_BASE}${path}`, {
+    return apiFetch<T>(path, {
       method: 'POST',
-      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      attachSession: true,
+      headers: { 'Content-Type': 'application/json' },
       body: body !== undefined ? JSON.stringify(body) : undefined
     });
-    if (!res.ok) {
-      const txt = await res.text().catch(() => '');
-      throw new Error(`HTTP ${res.status}${txt ? `: ${txt}` : ''}`);
-    }
-    return res.json();
   },
 
   async del<T>(path: string): Promise<T> {
-    const res = await fetch(`${API_BASE}${path}`, {
+    return apiFetch<T>(path, {
       method: 'DELETE',
-      headers: authHeaders()
+      attachSession: true
     });
-    if (!res.ok) {
-      const txt = await res.text().catch(() => '');
-      throw new Error(`HTTP ${res.status}${txt ? `: ${txt}` : ''}`);
-    }
-    return res.json();
   }
 };
 

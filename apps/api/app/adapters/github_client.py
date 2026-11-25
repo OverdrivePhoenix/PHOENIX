@@ -3,13 +3,32 @@ import logging
 import os
 import random
 import sys
+import traceback
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
-import keyring
 
 KEYRING_SERVICE = "PHOENIX_GITHUB"
 KEYRING_USERNAME = "oauth_token"
+
+
+def secret_store():
+    try:
+        import keyring
+        return keyring
+    except Exception:
+        log_gh(f"keyring unavailable:\n{traceback.format_exc()}")
+        return None
+
+
+def get_keyring_backend_name() -> str:
+    kr = secret_store()
+    if kr is None:
+        return "unavailable"
+    try:
+        return type(kr.get_keyring()).__name__
+    except Exception as exc:
+        return f"error({exc!r})"
 
 GRAPHQL_REPOS_QUERY = """
 query {
@@ -78,8 +97,11 @@ def log_gh(msg: str):
 
 
 def get_stored_token() -> Optional[str]:
+    kr = secret_store()
+    if kr is None:
+        return None
     try:
-        tok = keyring.get_password(KEYRING_SERVICE, KEYRING_USERNAME)
+        tok = kr.get_password(KEYRING_SERVICE, KEYRING_USERNAME)
         return tok.strip() if tok else None
     except Exception as e:
         log_gh(f"keyring read failed: {e!r}")
@@ -87,18 +109,23 @@ def get_stored_token() -> Optional[str]:
 
 
 def store_token(token: str):
-    keyring.set_password(KEYRING_SERVICE, KEYRING_USERNAME, token.strip())
+    kr = secret_store()
+    if kr is None:
+        raise RuntimeError("Secure token storage unavailable")
+    kr.set_password(KEYRING_SERVICE, KEYRING_USERNAME, token.strip())
     log_gh("Token stored in Windows Credential Manager via keyring (value redacted)")
 
 
 def delete_token():
+    kr = secret_store()
+    if kr is None:
+        return
     try:
-        keyring.delete_password(KEYRING_SERVICE, KEYRING_USERNAME)
+        kr.delete_password(KEYRING_SERVICE, KEYRING_USERNAME)
         log_gh("Token deleted from Windows Credential Manager")
-    except keyring.errors.PasswordDeleteError:
-        pass
     except Exception as e:
-        log_gh(f"keyring delete error: {e!r}")
+        if "PasswordDeleteError" not in type(e).__name__:
+            log_gh(f"keyring delete error: {e!r}")
 
 
 class BackoffError(Exception):

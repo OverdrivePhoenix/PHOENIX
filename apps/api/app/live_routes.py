@@ -75,6 +75,7 @@ async def get_integrations_status():
     )
     return {
         "github_connected": token_present,
+        "keyring_available": gh.secret_store() is not None,
         "source_status": statuses,
         "projects": all_data["projects"],
         "antigravity_running": all_data["antigravity_running"],
@@ -85,6 +86,8 @@ async def get_integrations_status():
 @router.post("/integrations/github/pat")
 async def connect_github_pat(request: Request, payload: Dict[str, Any] = Body(...)):
     reject_path_fields(request, payload)
+    if gh.secret_store() is None:
+        raise HTTPException(status_code=503, detail="Secure token storage unavailable")
     token = str(payload.get("token") or "").strip()
     if not token:
         raise HTTPException(status_code=400, detail="Token is required")
