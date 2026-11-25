@@ -162,6 +162,37 @@ def get_primary_monitor_rect_physical():
     return RECT(0, 0, user32.GetSystemMetrics(0), user32.GetSystemMetrics(1))
 
 
+def get_overlay_hwnd() -> int:
+    """Returns the TOP-LEVEL WinForms Form handle directly via window.native.Handle (verified in winforms.py:195,204)."""
+    global voice_overlay_window
+    try:
+        if voice_overlay_window and hasattr(voice_overlay_window, "native") and voice_overlay_window.native:
+            return int(voice_overlay_window.native.Handle.ToInt32())
+    except Exception:
+        pass
+    try:
+        import ctypes
+        return ctypes.windll.user32.FindWindowW(None, "PHOENIX Notch") or 0
+    except Exception:
+        return 0
+
+
+def verify_root_rgn(hwnd: int):
+    """Re-reads GetWindowRgnBox on the root Form; if NULLREGION or full rect, re-applies SetWindowRgn."""
+    try:
+        t, rb = _rgn_info(hwnd)
+        wr = _rect_tuple(hwnd)
+        win_w = wr[2] - wr[0]
+        win_h = wr[3] - wr[1]
+        if t in (0, 1) or (rb[0] == 0 and rb[1] == 0 and rb[2] >= win_w and rb[3] >= win_h):
+            log_diag(f"[A2:verify_root_rgn] Region lost/full (t={t}, rb={rb}, win={win_w}x{win_h}); re-applying")
+            set_notch_region(hwnd, cur_dim["w"], cur_dim["h"])
+        else:
+            log_diag(f"[A2:verify_root_rgn] Root rgn intact: t={t}, rb={rb}")
+    except Exception as e:
+        log_diag(f"[A2:verify_root_rgn] error: {e}")
+
+
 def place_overlay(hwnd: int) -> float:
     """Positions and sizes the overlay window in physical px from DIP tokens, flush at monitor rcMonitor top-center."""
     global last_scale
@@ -202,6 +233,64 @@ def place_overlay(hwnd: int) -> float:
     except Exception as e:
         log_diag(f"place_overlay error: {e}")
         return 1.0
+
+
+def _cls_name(h: int) -> str:
+    import ctypes
+    b = ctypes.create_unicode_buffer(256)
+    ctypes.windll.user32.GetClassNameW(h, b, 256)
+    return b.value
+
+
+def _rect_tuple(h: int):
+    import ctypes
+    from ctypes import wintypes
+    r = wintypes.RECT()
+    ctypes.windll.user32.GetWindowRect(h, ctypes.byref(r))
+    return (r.left, r.top, r.right, r.bottom)
+
+
+def _rgn_info(h: int):
+    import ctypes
+    from ctypes import wintypes
+    r = wintypes.RECT()
+    t = ctypes.windll.user32.GetWindowRgnBox(h, ctypes.byref(r))
+    return t, (r.left, r.top, r.right, r.bottom)
+
+
+def describe_hwnd(tag: str, hwnd: int):
+    try:
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        root = user32.GetAncestor(hwnd, 2)  # GA_ROOT = 2
+        log_diag(
+            f"[A1:{tag}] hwnd={hwnd:#x} class={_cls_name(hwnd)} rect={_rect_tuple(hwnd)} rgn={_rgn_info(hwnd)} "
+            f"root={root:#x} root_class={_cls_name(root)} root_rgn={_rgn_info(root)}"
+        )
+        kids = []
+        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        def cb(h, _):
+            kids.append((h, _cls_name(h), _rect_tuple(h), _rgn_info(h)))
+            return True
+        user32.EnumChildWindows(root, cb, 0)
+        for k in kids:
+            log_diag(f"    child hwnd={k[0]:#x} class={k[1]} rect={k[2]} rgn={k[3]}")
+    except Exception as e:
+        log_diag(f"[A1:{tag}] describe error: {e}")
+
+
+def probe_point(tag: str, x: int, y: int):
+    try:
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        h = user32.WindowFromPoint(wintypes.POINT(int(x), int(y)))
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(h, ctypes.byref(pid))
+        log_diag(f"[A1:{tag}] point=({x},{y}) -> hwnd={h:#x} class={_cls_name(h)} pid={pid.value} ours={pid.value == os.getpid()}")
+    except Exception as e:
+        log_diag(f"[A1:{tag}] probe error: {e}")
 
 
 def log_overlay_diagnostics(tag: str, hwnd: int, w_dip: int, h_dip: int):
@@ -291,8 +380,7 @@ def transition_island_state(next_state: str):
         tween_busy = True
         tween_cancel = False
         try:
-            import ctypes
-            hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Notch")
+            hwnd = get_overlay_hwnd()
             if not hwnd:
                 return
 
@@ -583,6 +671,7 @@ def start_dpi_monitor():
                     log_diag(f"DPI/Display change detected: scale {last_scale}->{s}, mon {last_mon}->{mon_tuple}")
                     place_overlay(hwnd)
                     set_notch_region(hwnd, cur_dim["w"], cur_dim["h"])
+                    verify_root_rgn(hwnd)
                     log_overlay_diagnostics("dpi_change", hwnd, cur_dim["w"], cur_dim["h"])
                 last_mon = mon_tuple
         except Exception:
@@ -645,9 +734,7 @@ def configure_voice_overlay_window(expanded: bool = False):
         import ctypes
         from ctypes import c_int
 
-        hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Notch")
-        if not hwnd:
-            hwnd = ctypes.windll.user32.FindWindowW(None, "PHOENIX Voice Overlay")
+        hwnd = get_overlay_hwnd()
         if hwnd:
             GWL_STYLE = -16
             GWL_EXSTYLE = -20
@@ -700,6 +787,14 @@ def configure_voice_overlay_window(expanded: bool = False):
 
             place_overlay(hwnd)
             set_notch_region(hwnd, cur_dim["w"], cur_dim["h"])
+            verify_root_rgn(hwnd)
+            describe_hwnd("after_set_notch_region", hwnd)
+            r = _rect_tuple(hwnd)
+            _, rb = _rgn_info(hwnd)
+            cx = (r[0] + r[2]) // 2
+            probe_point("a_center_notch", cx, r[1] + max(5, (rb[3] - rb[1]) // 2))
+            probe_point("b_below_notch", cx, r[1] + rb[3] + 20)
+            probe_point("c_left_of_notch", r[0] + max(2, rb[0] - 20), r[1] + 10)
             if DEBUG_SHAPE:
                 try:
                     voice_overlay_window.evaluate_js("window.__PHOENIX_DEBUG_SHAPE__ = true;")

@@ -2,12 +2,12 @@
   "pad": 2,
   "window": {
     "width": 524,
-    "height": 190
+    "height": 200
   },
   "states": {
     "idle": { "width": 200, "height": 36, "radius": 18 },
-    "hover": { "width": 340, "height": 72, "radius": 24 },
-    "voice": { "width": 440, "height": 132, "radius": 24 },
-    "approval": { "width": 520, "height": 188, "radius": 24 }
+    "hover": { "width": 360, "height": 84, "radius": 24 },
+    "voice": { "width": 440, "height": 196, "radius": 24 },
+    "approval": { "width": 520, "height": 196, "radius": 24 }
   }
 }

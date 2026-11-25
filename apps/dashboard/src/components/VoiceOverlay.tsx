@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 // @ts-ignore
 import Strands from './Strands';
 import OVERLAY_TOKENS from '../constants/overlayTokens.json';
-import { Mic, MicOff, PhoneOff, ChevronUp } from 'lucide-react';
+import { Mic, MicOff, PhoneOff, ChevronUp, LayoutDashboard, Settings } from 'lucide-react';
 
 export type VoiceTone = 'calm_concise' | 'conversational' | 'direct';
 export type NotchState = 'idle' | 'hover' | 'voice' | 'approval';
@@ -40,14 +40,22 @@ const STRANDS_COLORS = [
 
 const OPAQUE_CLEAR_COLOR = [10 / 255, 10 / 255, 11 / 255, 1.0];
 
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL ||
+  (typeof window !== 'undefined' && window.location.origin && !window.location.origin.includes('5173')
+    ? window.location.origin
+    : 'http://localhost:8000');
+
 export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
-  currentProjectName = 'Project PHOENIX',
-  activeAgent = 'SWE-03',
+  onOpenCommandCenter,
+  currentProjectName = 'College Canteen App',
+  activeAgent = 'PHOENIX · SWE-03',
   pendingApproval = null,
   dailySpend = 18.42,
   isEmergencyPaused = false,
   onApproveAction,
-  onDenyAction
+  onDenyAction,
+  onSendCommand
 }) => {
   const [notchState, setNotchState] = useState<NotchState>(
     pendingApproval ? 'approval' : 'idle'
@@ -56,12 +64,16 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
   const [audioLevel, setAudioLevel] = useState<number>(0.04);
-  const [captionText, setCaptionText] = useState<string>('Listening...');
+  const [captionText, setCaptionText] = useState<string>('Listening for command...');
+  const [selectedVoiceId, setSelectedVoiceId] = useState<string>('en-GB-RyanNeural');
 
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const recognitionRef = useRef<any>(null);
+  const activeAudioElementRef = useRef<HTMLAudioElement | null>(null);
 
   const requestState = (next: NotchState) => {
     try {
@@ -74,6 +86,22 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
     } catch {
       setNotchState(next);
       setIsReady(true);
+    }
+  };
+
+  // Overflow assertion: verify content never overflows current state token bounds
+  const checkOverflow = (stateName: NotchState) => {
+    const el = stageRef.current;
+    if (!el) return;
+    const dim = STATE_DIMENSIONS[stateName];
+    const ow = Math.max(0, el.scrollWidth - dim.width);
+    const oh = Math.max(0, el.scrollHeight - dim.height);
+    if (ow > 0 || oh > 0) {
+      const msg = `Overflow in state='${stateName}': scroll=${el.scrollWidth}x${el.scrollHeight} > token=${dim.width}x${dim.height} (overflow +${ow}w,+${oh}h)`;
+      console.error(msg);
+      try {
+        (window as any).pywebview?.api?.log_error(msg);
+      } catch {}
     }
   };
 
@@ -102,6 +130,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
       const next = (e as CustomEvent<NotchState>).detail;
       if (next && STATE_DIMENSIONS[next]) {
         setNotchState(next);
+        requestAnimationFrame(() => checkOverflow(next));
       }
       setIsReady(true);
     };
@@ -111,6 +140,16 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
       window.removeEventListener('island:leave', onLeave);
       window.removeEventListener('island:settled', onSettled);
     };
+  }, []);
+
+  // Load persisted default voice for TTS replies
+  useEffect(() => {
+    fetch(`${API_BASE}/api/tts/voice-generator/voices`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.default_voice) setSelectedVoiceId(data.default_voice);
+      })
+      .catch(() => {});
   }, []);
 
   // React to incoming approvals
@@ -140,7 +179,49 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Audio analyser (only active when not idle)
+  const speakWithActiveProvider = async (rawText: string) => {
+    setIsSpeaking(true);
+    setCaptionText(rawText);
+    try {
+      const response = await fetch(`${API_BASE}/api/tts/voice-generator/preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: rawText,
+          voice_id: selectedVoiceId,
+          speed: 1.0,
+          pitch: 0,
+          volume: 100,
+          tone: 'calm_concise'
+        })
+      });
+      if (response.ok && response.headers.get('content-type')?.includes('audio')) {
+        const blob = await response.blob();
+        const audio = new Audio(URL.createObjectURL(blob));
+        activeAudioElementRef.current = audio;
+        audio.onended = () => {
+          setIsSpeaking(false);
+          setAudioLevel(0.04);
+          setCaptionText('Listening for command...');
+        };
+        await audio.play();
+        return;
+      }
+    } catch {}
+    setIsSpeaking(false);
+  };
+
+  const handleUserUtterance = async (transcript: string) => {
+    setCaptionText(`"${transcript}"`);
+    if (onSendCommand) {
+      try {
+        const res = await onSendCommand(transcript, 'calm_concise');
+        if (res?.reply) await speakWithActiveProvider(res.reply);
+      } catch {}
+    }
+  };
+
+  // Audio analyser + Web Speech Recognition
   useEffect(() => {
     let cancelled = false;
     const initAudio = async () => {
@@ -180,6 +261,31 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
       } catch {}
     };
     initAudio();
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      try {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+        recognition.onresult = (event: any) => {
+          let interim = '';
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+              const txt = event.results[i][0].transcript.trim();
+              if (txt) handleUserUtterance(txt);
+            } else {
+              interim += event.results[i][0].transcript;
+            }
+          }
+          if (interim) setCaptionText(interim);
+        };
+        recognition.start();
+        recognitionRef.current = recognition;
+      } catch {}
+    }
+
     return () => {
       cancelled = true;
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
@@ -187,8 +293,26 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
       if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
         audioContextRef.current.close().catch(() => {});
       }
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {}
+      }
+      if (activeAudioElementRef.current) activeAudioElementRef.current.pause();
     };
   }, []);
+
+  const handleOpenDashboard = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onOpenCommandCenter) {
+      onOpenCommandCenter();
+    } else {
+      fetch(`${API_BASE}/tray/restore-window`, { method: 'POST' }).catch(() => {});
+    }
+    try {
+      (window as any).pywebview?.api?.open_dashboard();
+    } catch {}
+  };
 
   const handleMouseEnter = () => {
     try {
@@ -227,6 +351,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
       }}
     >
       <div
+        ref={stageRef}
         onClick={handleClick}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
@@ -261,7 +386,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
             minWidth: 0
           }}
         >
-          {/* 1. IDLE (200 × 36): dot + SWE-03 + small paused orb */}
+          {/* 1. IDLE (200 × 36): status dot + PHOENIX · SWE-03 + mini orb */}
           {notchState === 'idle' && (
             <div className="w-full h-full flex items-center justify-between gap-2 min-w-0">
               <div className="flex items-center gap-2 min-w-0">
@@ -271,7 +396,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
                   }`}
                 />
                 <span className="text-[11px] font-mono font-medium tracking-wider text-[#F2F2F2] whitespace-nowrap overflow-hidden text-ellipsis min-w-0">
-                  {activeAgent.replace('PHOENIX · ', '')}
+                  {pendingApproval ? 'GATE REQ' : activeAgent}
                 </span>
               </div>
               <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 bg-[#0A0A0B]">
@@ -293,7 +418,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
             </div>
           )}
 
-          {/* 2. HOVER (340 × 72): one-line task + status */}
+          {/* 2. HOVER (360 × 84): active task + status + budget readout ($18.42) */}
           {notchState === 'hover' && (
             <div className="w-full h-full flex items-center justify-between gap-3 min-w-0">
               <div className="flex flex-col min-w-0 flex-1">
@@ -307,59 +432,93 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
                     {activeAgent} · {isEmergencyPaused ? 'PAUSED' : 'ACTIVE'}
                   </span>
                 </div>
-                <span className="text-[13px] font-sans text-[#F2F2F2] whitespace-nowrap overflow-hidden text-ellipsis min-w-0 mt-0.5">
+                <span className="text-[13px] font-sans text-[#F2F2F2] whitespace-nowrap overflow-hidden text-ellipsis min-w-0 mt-1">
                   {currentProjectName}
                 </span>
               </div>
-              <span className="text-[12px] font-mono tabular-nums text-[#F2F2F2] whitespace-nowrap shrink-0">
-                ${dailySpend.toFixed(2)}
-              </span>
+              <div className="flex items-center gap-2.5 shrink-0">
+                <span className="text-[12px] font-mono tabular-nums text-[#F2F2F2] whitespace-nowrap">
+                  ${dailySpend.toFixed(2)}
+                </span>
+                <div className="w-6 h-6 rounded-full overflow-hidden shrink-0 bg-[#0A0A0B]">
+                  <Strands
+                    colors={STRANDS_COLORS}
+                    speed={0.8}
+                    amplitude={0.9}
+                    energy={0.45}
+                    level={audioLevel}
+                    listening={!isSpeaking && !isMuted}
+                    glass={true}
+                    interactive={false}
+                    scale={0.85}
+                    maxDevicePixelRatio={2}
+                    paused={false}
+                    opaqueClearColor={OPAQUE_CLEAR_COLOR}
+                  />
+                </div>
+              </div>
             </div>
           )}
 
-          {/* 3. VOICE (440 × 132): orb + one line + Mute/End */}
+          {/* 3. VOICE (440 × 196): header + Strands orb + transcript + 3-button dock (Mute, Voice, End) */}
           {notchState === 'voice' && (
             <div className="w-full h-full flex flex-col justify-between gap-2 min-w-0">
-              <div className="flex items-center justify-between gap-3 min-w-0">
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 bg-[#0A0A0B]">
-                    <Strands
-                      colors={STRANDS_COLORS}
-                      speed={1.0}
-                      amplitude={1.1}
-                      energy={0.65}
-                      level={audioLevel}
-                      listening={!isSpeaking && !isMuted}
-                      glass={true}
-                      interactive={false}
-                      scale={0.9}
-                      maxDevicePixelRatio={2}
-                      paused={false}
-                      opaqueClearColor={OPAQUE_CLEAR_COLOR}
-                    />
-                  </div>
-                  <div className="flex flex-col min-w-0 flex-1">
-                    <span className="text-[11px] font-mono uppercase text-[#8A8A8E] whitespace-nowrap overflow-hidden text-ellipsis min-w-0">
-                      {activeAgent} · {isSpeaking ? 'SPEAKING' : isMuted ? 'MUTED' : 'LISTENING'}
-                    </span>
-                    <span className="text-[13px] font-sans text-[#F2F2F2] whitespace-nowrap overflow-hidden text-ellipsis min-w-0">
-                      {captionText}
-                    </span>
-                  </div>
+              <div className="flex items-center justify-between gap-2 pb-2 border-b border-white/[0.08] shrink-0 min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#F2F2F2] shrink-0" />
+                  <span className="text-[11px] font-mono uppercase text-[#F2F2F2] whitespace-nowrap overflow-hidden text-ellipsis min-w-0">
+                    {activeAgent} · BUTLER ONLINE
+                  </span>
                 </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    requestState('idle');
-                  }}
-                  title="Collapse (Esc)"
-                  className="w-8 h-8 rounded-[4px] border border-white/[0.10] bg-transparent hover:bg-white/[0.06] text-[#8A8A8E] hover:text-[#F2F2F2] flex items-center justify-center shrink-0"
-                >
-                  <ChevronUp className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={handleOpenDashboard}
+                    title="Open Command Center"
+                    className="w-7 h-7 rounded-[4px] border border-white/[0.10] bg-transparent hover:bg-white/[0.06] text-[#8A8A8E] hover:text-[#F2F2F2] flex items-center justify-center"
+                  >
+                    <LayoutDashboard className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      requestState('idle');
+                    }}
+                    title="Collapse (Esc)"
+                    className="w-7 h-7 rounded-[4px] border border-white/[0.10] bg-transparent hover:bg-white/[0.06] text-[#8A8A8E] hover:text-[#F2F2F2] flex items-center justify-center"
+                  >
+                    <ChevronUp className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 shrink-0">
+              <div className="flex items-center gap-3 flex-1 min-h-0 min-w-0">
+                <div className="w-14 h-14 rounded-full overflow-hidden shrink-0 bg-[#0A0A0B]">
+                  <Strands
+                    colors={STRANDS_COLORS}
+                    speed={1.0}
+                    amplitude={1.1}
+                    energy={0.65}
+                    level={audioLevel}
+                    listening={!isSpeaking && !isMuted}
+                    glass={true}
+                    interactive={false}
+                    scale={0.9}
+                    maxDevicePixelRatio={2}
+                    paused={false}
+                    opaqueClearColor={OPAQUE_CLEAR_COLOR}
+                  />
+                </div>
+                <div className="flex flex-col min-w-0 flex-1">
+                  <span className="text-[11px] font-mono uppercase text-[#8A8A8E] whitespace-nowrap overflow-hidden text-ellipsis min-w-0">
+                    {isSpeaking ? 'SPEAKING' : isMuted ? 'MUTED' : 'LISTENING'}
+                  </span>
+                  <span className="text-[13px] font-sans text-[#F2F2F2] whitespace-nowrap overflow-hidden text-ellipsis min-w-0 mt-0.5">
+                    {captionText}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 shrink-0">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -369,6 +528,14 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
                 >
                   {isMuted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
                   <span>{isMuted ? 'Unmute' : 'Mute'}</span>
+                </button>
+                <button
+                  onClick={handleOpenDashboard}
+                  title="Open Settings > Voice in Main Window"
+                  className="h-8 rounded-[4px] border border-white/[0.18] bg-transparent hover:bg-white/[0.06] text-[#F2F2F2] text-[12px] font-mono flex items-center justify-center gap-1.5 whitespace-nowrap min-w-0"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span>Voice</span>
                 </button>
                 <button
                   onClick={(e) => {
@@ -385,29 +552,38 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
             </div>
           )}
 
-          {/* 4. APPROVAL (520 × 188): risk label + truncated title + Reject/Authorize */}
+          {/* 4. APPROVAL (520 × 196): #id AUTHORIZATION REQUIRED, task title, Risk level · Guardrail, Reject/Authorize */}
           {notchState === 'approval' && (
             <div className="w-full h-full flex flex-col justify-between gap-2 min-w-0">
-              <div className="flex items-center justify-between gap-2 min-w-0">
+              <div className="flex items-center justify-between gap-2 pb-2 border-b border-white/[0.08] shrink-0 min-w-0">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="w-2 h-2 rounded-full bg-[#FF3B30] shrink-0" />
                   <span className="text-[11px] font-mono uppercase tracking-wider text-[#F2F2F2] whitespace-nowrap overflow-hidden text-ellipsis min-w-0">
-                    AUTHORIZATION REQUIRED · #{pendingApproval?.id ? pendingApproval.id.slice(-4) : '8921'}
+                    #{pendingApproval?.id ? pendingApproval.id.slice(-4) : 'CK-1'} AUTHORIZATION REQUIRED
                   </span>
                 </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    requestState('idle');
-                  }}
-                  title="Collapse (Esc)"
-                  className="w-7 h-7 rounded-[4px] border border-white/[0.10] bg-transparent hover:bg-white/[0.06] text-[#8A8A8E] hover:text-[#F2F2F2] flex items-center justify-center shrink-0"
-                >
-                  <ChevronUp className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={handleOpenDashboard}
+                    title="Open Command Center"
+                    className="w-7 h-7 rounded-[4px] border border-white/[0.10] bg-transparent hover:bg-white/[0.06] text-[#8A8A8E] hover:text-[#F2F2F2] flex items-center justify-center"
+                  >
+                    <LayoutDashboard className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      requestState('idle');
+                    }}
+                    title="Collapse (Esc)"
+                    className="w-7 h-7 rounded-[4px] border border-white/[0.10] bg-transparent hover:bg-white/[0.06] text-[#8A8A8E] hover:text-[#F2F2F2] flex items-center justify-center"
+                  >
+                    <ChevronUp className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
-              <div className="flex flex-col min-w-0">
+              <div className="flex flex-col min-w-0 flex-1 justify-center">
                 <span
                   className="text-[13px] font-medium text-[#F2F2F2] whitespace-nowrap overflow-hidden text-ellipsis min-w-0"
                   title={pendingApproval?.action || 'Cloud Resource Provisioning'}
@@ -415,7 +591,7 @@ export const VoiceOverlay: React.FC<VoiceOverlayProps> = ({
                   {pendingApproval?.action || 'Cloud Resource Provisioning (Redis Cluster)'}
                 </span>
                 <span className="text-[11px] font-mono text-[#8A8A8E] whitespace-nowrap overflow-hidden text-ellipsis min-w-0 mt-1">
-                  RISK: {(pendingApproval?.risk_level || 'HIGH').toUpperCase()} · ZERO-TRUST GATE
+                  Risk level: {(pendingApproval?.risk_level || 'MEDIUM').toUpperCase()} · Guardrail: Enforced
                 </span>
               </div>
 
