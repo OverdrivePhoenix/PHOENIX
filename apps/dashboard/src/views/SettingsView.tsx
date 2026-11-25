@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { liveApi } from '../lib/liveApi';
+import { SourceBadge, SourceStatus, formatRelativeTime } from '../components/LiveStatus';
 
 const API_BASE =
   import.meta.env.VITE_API_BASE_URL ||
@@ -50,6 +52,37 @@ export const SettingsView: React.FC = () => {
   const [testStatus, setTestStatus] = useState<string>('');
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const saveTimerRef = useRef<any>(null);
+
+  // Live Integrations State
+  const [intStatus, setIntStatus] = useState<{
+    github_connected: boolean;
+    source_status: Record<string, SourceStatus>;
+    projects: any[];
+    antigravity_running: boolean;
+    prefs: {
+      ag_poll_seconds: number;
+      gh_poll_focused_seconds: number;
+      gh_poll_idle_seconds: number;
+      speak_urgent: boolean;
+      boot_digest: boolean;
+    };
+  } | null>(null);
+  const [patInput, setPatInput] = useState('');
+  const [ghClientId, setGhClientId] = useState('');
+  const [deviceFlow, setDeviceFlow] = useState<{
+    device_code: string;
+    user_code: string;
+    verification_uri: string;
+  } | null>(null);
+  const [intBusy, setIntBusy] = useState(false);
+  const [intMsg, setIntMsg] = useState<string | null>(null);
+
+  const loadIntegrations = () => {
+    liveApi
+      .get<any>('/live/integrations/status')
+      .then((d) => setIntStatus(d))
+      .catch(() => {});
+  };
 
   const persistSettingsDebounced = (override?: Partial<{
     engine: string;
@@ -113,6 +146,7 @@ export const SettingsView: React.FC = () => {
         }
       }
     });
+    loadIntegrations();
   }, []);
 
   // Update voice choices when active provider changes
@@ -255,6 +289,256 @@ export const SettingsView: React.FC = () => {
       </div>
 
       <form onSubmit={handleSave} className="flex flex-col gap-6 max-w-3xl font-sans text-sm">
+        {/* Section 0: Live Integrations (Antigravity & GitHub) */}
+        <div className="p-5 rounded-[4px] bg-[#111113] border border-white/[0.08] flex flex-col gap-5">
+          <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+            <div>
+              <h3 className="text-sm font-semibold text-[#F2F2F2]">Integrations & Live Sync</h3>
+              <p className="text-[11px] text-[#8A8A8E] font-mono">
+                READ-ONLY ANTIGRAVITY WORKSPACES // GITHUB GRAPHQL & CREDENTIAL MANAGER
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={intBusy}
+              onClick={async () => {
+                setIntBusy(true);
+                setIntMsg(null);
+                try {
+                  await liveApi.post('/live/sync', { source: 'all' });
+                  loadIntegrations();
+                  setIntMsg('Sync complete.');
+                } catch (e: any) {
+                  setIntMsg(e?.message || 'Sync failed');
+                } finally {
+                  setIntBusy(false);
+                }
+              }}
+              className="px-3 py-1.5 rounded-[4px] bg-[#F2F2F2] text-[#0A0A0B] text-xs font-medium hover:bg-white disabled:opacity-50"
+            >
+              {intBusy ? 'Syncing...' : 'Sync Now'}
+            </button>
+          </div>
+
+          {intMsg && (
+            <div className="px-3 py-2 rounded-[4px] bg-[#0A0A0B] border border-white/[0.10] text-xs font-mono text-[#F2F2F2]">
+              {intMsg}
+            </div>
+          )}
+
+          {/* GitHub Card */}
+          <div className="p-4 rounded-[4px] bg-[#0A0A0B] border border-white/[0.08] flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-mono uppercase text-[#F2F2F2]">GitHub</span>
+                <SourceBadge label="status" status={intStatus?.source_status?.github} />
+              </div>
+              {intStatus?.github_connected && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIntBusy(true);
+                    await liveApi.del('/live/integrations/github').catch(() => {});
+                    loadIntegrations();
+                    setIntBusy(false);
+                  }}
+                  className="px-2.5 py-1 rounded-[4px] border border-[#FF3B30]/40 text-[#FF3B30] text-[11px] font-mono hover:bg-[#FF3B30]/10"
+                >
+                  Disconnect
+                </button>
+              )}
+            </div>
+
+            {intStatus?.github_connected ? (
+              <div className="text-xs font-mono text-[#8A8A8E] flex flex-col gap-1">
+                <div>
+                  User: <span className="text-[#F2F2F2]">{intStatus.source_status?.github?.meta?.login || 'connected'}</span>
+                  {' · '}Repos: <span className="text-[#F2F2F2] tabular-nums">{intStatus.source_status?.github?.meta?.repo_count ?? 0}</span>
+                  {' · '}Quota left: <span className="text-[#F2F2F2] tabular-nums">{intStatus.source_status?.github?.meta?.rate_remaining ?? '—'}</span>
+                </div>
+                <div>
+                  Scopes: {(intStatus.source_status?.github?.meta?.scopes || []).join(', ') || 'read-only'}
+                </div>
+                {intStatus.source_status?.github?.last_error && (
+                  <div className="text-[#FF3B30]">
+                    Notice: {intStatus.source_status.github.last_error}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <p className="text-[11px] font-mono text-[#8A8A8E]">
+                  Use a fine-grained PAT with read-only permissions: Metadata, Contents, Pull requests, Issues, Actions, Checks. Stored in Windows Credential Manager.
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={patInput}
+                    onChange={(e) => setPatInput(e.target.value)}
+                    placeholder="github_pat_..."
+                    className="flex-1 bg-[#111113] border border-white/[0.10] rounded-[4px] px-3 py-1.5 text-xs font-mono text-[#F2F2F2]"
+                  />
+                  <button
+                    type="button"
+                    disabled={intBusy || !patInput.trim()}
+                    onClick={async () => {
+                      setIntBusy(true);
+                      setIntMsg(null);
+                      try {
+                        await liveApi.post('/live/integrations/github/pat', { token: patInput.trim() });
+                        setPatInput('');
+                        loadIntegrations();
+                        setIntMsg('GitHub connected.');
+                      } catch (e: any) {
+                        setIntMsg(e?.message || 'GitHub connection failed');
+                      } finally {
+                        setIntBusy(false);
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-[4px] bg-[#F2F2F2] text-[#0A0A0B] text-xs font-medium disabled:opacity-50"
+                  >
+                    Connect PAT
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 pt-2 border-t border-white/[0.06]">
+                  <input
+                    type="text"
+                    value={ghClientId}
+                    onChange={(e) => setGhClientId(e.target.value)}
+                    placeholder="OAuth App Client ID (Device Flow)"
+                    className="flex-1 bg-[#111113] border border-white/[0.10] rounded-[4px] px-3 py-1.5 text-xs font-mono text-[#F2F2F2]"
+                  />
+                  <button
+                    type="button"
+                    disabled={intBusy || !ghClientId.trim()}
+                    onClick={async () => {
+                      setIntBusy(true);
+                      setIntMsg(null);
+                      try {
+                        const res = await liveApi.post<any>('/live/integrations/github/device/start', {
+                          client_id: ghClientId.trim()
+                        });
+                        setDeviceFlow(res);
+                      } catch (e: any) {
+                        setIntMsg(e?.message || 'Device flow failed');
+                      } finally {
+                        setIntBusy(false);
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-[4px] border border-white/[0.12] text-xs font-mono text-[#F2F2F2] disabled:opacity-50"
+                  >
+                    Device Flow
+                  </button>
+                </div>
+
+                {deviceFlow && (
+                  <div className="p-3 rounded-[4px] bg-[#111113] border border-white/[0.10] text-xs font-mono flex items-center justify-between gap-3">
+                    <div>
+                      Open <span className="text-[#F2F2F2]">{deviceFlow.verification_uri}</span> and enter{' '}
+                      <span className="text-[#F2F2F2] font-bold">{deviceFlow.user_code}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const r = await liveApi.post<any>('/live/integrations/github/device/poll', {
+                          client_id: ghClientId.trim(),
+                          device_code: deviceFlow.device_code
+                        });
+                        if (r.ok) {
+                          setDeviceFlow(null);
+                          loadIntegrations();
+                          setIntMsg('GitHub connected via Device Flow.');
+                        } else {
+                          setIntMsg(`Device Flow: ${r.status}`);
+                        }
+                      }}
+                      className="px-2.5 py-1 rounded-[4px] bg-[#F2F2F2] text-[#0A0A0B] text-[11px]"
+                    >
+                      Verify
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Antigravity & Tracked Projects */}
+          <div className="p-4 rounded-[4px] bg-[#0A0A0B] border border-white/[0.08] flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-mono uppercase text-[#F2F2F2]">Antigravity IDE</span>
+                <SourceBadge label="scan" status={intStatus?.source_status?.antigravity} />
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  await liveApi.post('/live/projects/pick-folder').catch(() => {});
+                  loadIntegrations();
+                }}
+                className="px-2.5 py-1 rounded-[4px] border border-white/[0.12] text-[11px] font-mono text-[#F2F2F2] hover:border-white/[0.25]"
+              >
+                Add Folder
+              </button>
+            </div>
+            <div className="text-[11px] font-mono text-[#8A8A8E]">
+              Roots: {(intStatus?.source_status?.antigravity?.meta?.roots || []).join(', ') || 'None detected'}
+              {' · '}IDE {intStatus?.antigravity_running ? 'Running' : 'Not running'}
+            </div>
+            {intStatus?.projects && intStatus.projects.length > 0 && (
+              <div className="divide-y divide-white/[0.06] border border-white/[0.06] rounded-[4px] max-h-40 overflow-y-auto">
+                {intStatus.projects.map((p) => (
+                  <div key={p.id} className="px-3 py-2 flex items-center justify-between text-xs font-mono">
+                    <span className={p.excluded ? 'text-[#55555A] line-through' : 'text-[#F2F2F2]'}>
+                      {p.name} {p.remote_repo ? `(${p.remote_repo})` : ''}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await liveApi.post(`/live/projects/${encodeURIComponent(p.id)}/exclude`, {
+                          excluded: !p.excluded
+                        });
+                        loadIntegrations();
+                      }}
+                      className="text-[11px] text-[#8A8A8E] hover:text-[#F2F2F2]"
+                    >
+                      {p.excluded ? 'Include' : 'Exclude'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Polling & Proactive Digest Toggles */}
+          {intStatus?.prefs && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
+              <label className="flex items-center justify-between p-2.5 rounded-[4px] bg-[#0A0A0B] border border-white/[0.08] cursor-pointer">
+                <span className="text-[#F2F2F2]">Boot spoken digest</span>
+                <input
+                  type="checkbox"
+                  checked={intStatus.prefs.boot_digest}
+                  onChange={async (e) => {
+                    await liveApi.post('/live/settings', { boot_digest: e.target.checked });
+                    loadIntegrations();
+                  }}
+                />
+              </label>
+              <label className="flex items-center justify-between p-2.5 rounded-[4px] bg-[#0A0A0B] border border-white/[0.08] cursor-pointer">
+                <span className="text-[#F2F2F2]">Speak urgent CI/approval alerts</span>
+                <input
+                  type="checkbox"
+                  checked={intStatus.prefs.speak_urgent}
+                  onChange={async (e) => {
+                    await liveApi.post('/live/settings', { speak_urgent: e.target.checked });
+                    loadIntegrations();
+                  }}
+                />
+              </label>
+            </div>
+          )}
+        </div>
+
         {/* Section 1: Realistic Swappable Voice & Speech Synthesis */}
         <div className="p-5 rounded-lg bg-surface-container-low border border-outline-variant/30 flex flex-col gap-5">
           <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3">

@@ -1,188 +1,380 @@
 import React, { useState } from 'react';
+import {
+  EmptyState,
+  ErrorBanner,
+  SkeletonRows,
+  SourceBadge,
+  SourceStatus,
+  formatRelativeTime
+} from '../components/LiveStatus';
+import { liveApi, useLive } from '../lib/liveApi';
 
-interface ProjectsViewProps {
-  projects: any[];
-  currentProjectId: string;
-  onSelectProject: (id: string) => void;
-  onCreateProject: (name: string, goal: string, repoUrl: string) => Promise<void>;
-  onTriggerPlanModal: () => void;
+export interface LivePullRequest {
+  number: number;
+  title: string;
+  url: string;
+  isDraft: boolean;
+  updatedAt: string;
+  reviewDecision?: string | null;
+  author?: string | null;
+  ciState?: string | null;
 }
 
-export const ProjectsView: React.FC<ProjectsViewProps> = ({
-  projects,
-  currentProjectId,
-  onSelectProject,
-  onCreateProject,
-  onTriggerPlanModal
-}) => {
-  const [showNewModal, setShowNewModal] = useState(false);
-  const [name, setName] = useState('');
-  const [goal, setGoal] = useState('');
-  const [repoUrl, setRepoUrl] = useState('');
-  const [busy, setBusy] = useState(false);
+export interface LiveProject {
+  id: string;
+  name: string;
+  source_kind: 'linked' | 'local' | 'github';
+  seen_in: string[];
+  is_manual: boolean;
+  excluded: boolean;
+  last_opened: number;
+  branch?: string | null;
+  dirty_count: number;
+  ahead: number;
+  behind: number;
+  last_commit?: { sha: string; message: string; date: string } | null;
+  remote_repo?: string | null;
+  github?: {
+    nameWithOwner: string;
+    isPrivate: boolean;
+    pushedAt?: string | null;
+    url?: string | null;
+    defaultBranch?: string | null;
+    ciState?: string | null;
+    openPrsCount: number;
+    openPrs: LivePullRequest[];
+    openIssuesCount: number;
+  } | null;
+  updated_at?: string;
+}
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim() || busy) return;
-    setBusy(true);
+interface LiveProjectsPayload {
+  projects: LiveProject[];
+  antigravity_running: boolean;
+  source_status: Record<string, SourceStatus>;
+}
+
+interface ProjectsViewProps {
+  projects?: any[];
+  currentProjectId?: string;
+  onSelectProject?: (id: string) => void;
+  onCreateProject?: (name: string, goal: string, repoUrl: string) => Promise<void>;
+  onTriggerPlanModal?: () => void;
+  onOpenSettings?: () => void;
+}
+
+export const ProjectsView: React.FC<ProjectsViewProps> = ({ onOpenSettings }) => {
+  const { data, loading, error, refresh } = useLive<LiveProjectsPayload>('/live/projects', {
+    projects: [],
+    antigravity_running: false,
+    source_status: {}
+  });
+  const [selected, setSelected] = useState<LiveProject | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
+
+  const handleSyncNow = async () => {
+    setSyncing(true);
+    setActionMsg(null);
     try {
-      await onCreateProject(name.trim(), goal.trim(), repoUrl.trim());
-      setName('');
-      setGoal('');
-      setRepoUrl('');
-      setShowNewModal(false);
+      await liveApi.post('/live/sync', { source: 'all' });
+      await refresh();
+    } catch (e: any) {
+      setActionMsg(e?.message || 'Sync failed');
     } finally {
-      setBusy(false);
+      setSyncing(false);
     }
   };
 
+  const handlePickFolder = async () => {
+    setActionMsg(null);
+    try {
+      const res = await liveApi.post<{ ok: boolean; cancelled?: boolean; name?: string }>('/live/projects/pick-folder');
+      if (res.ok) {
+        await refresh();
+      }
+    } catch (e: any) {
+      setActionMsg(e?.message || 'Could not add folder');
+    }
+  };
+
+  const handleOpen = async (projectId: string, target: 'antigravity' | 'folder' | 'github') => {
+    setActionMsg(null);
+    try {
+      await liveApi.post(`/live/projects/${encodeURIComponent(projectId)}/open`, { target });
+    } catch (e: any) {
+      setActionMsg(e?.message || `Failed to open ${target}`);
+    }
+  };
+
+  const handleExclude = async (projectId: string) => {
+    try {
+      await liveApi.post(`/live/projects/${encodeURIComponent(projectId)}/exclude`, { excluded: true });
+      if (selected?.id === projectId) setSelected(null);
+      await refresh();
+    } catch (e: any) {
+      setActionMsg(e?.message || 'Exclude failed');
+    }
+  };
+
+  const projects = data.projects || [];
+  const agStatus = data.source_status?.antigravity;
+  const ghStatus = data.source_status?.github;
+
   return (
-    <div className="flex-1 h-[calc(100vh-2.5rem)] overflow-y-auto bg-surface-container-lowest p-6 flex flex-col gap-6 font-sans">
-      <div className="flex items-center justify-between border-b border-outline-variant/20 pb-4">
-        <div>
-          <h2 className="text-lg font-semibold text-on-surface">Initiatives & Workspaces</h2>
-          <p className="text-xs text-outline font-mono mt-0.5">
-            CONCURRENT PROJECT ISOLATION // PERSISTENT FIRESTORE REPOSITORIES
-          </p>
+    <div className="flex-1 h-[calc(100vh-3rem)] overflow-y-auto bg-[#0A0A0B] p-8 flex flex-col gap-6 font-sans text-[#F2F2F2]">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-white/[0.08] shrink-0">
+        <div className="min-w-0">
+          <h1 className="text-[13px] font-mono uppercase tracking-[0.08em] text-[#8A8A8E]">
+            Projects & Repositories
+          </h1>
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            <SourceBadge label="Antigravity" status={agStatus} onClick={onOpenSettings} />
+            <SourceBadge label="GitHub" status={ghStatus} onClick={onOpenSettings} />
+            <span className="text-[11px] font-mono text-[#55555A] px-2 py-1 border border-white/[0.08] rounded-[4px] bg-[#111113]">
+              IDE {data.antigravity_running ? 'RUNNING' : 'IDLE'}
+            </span>
+          </div>
         </div>
-        <button
-          onClick={() => setShowNewModal(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-primary text-on-primary font-medium text-xs hover:bg-primary-container transition-colors shadow-sm"
-        >
-          <span className="material-symbols-outlined text-[16px]">add</span>
-          <span>New Initiative</span>
-        </button>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={handleSyncNow}
+            disabled={syncing}
+            className="px-3 py-1.5 rounded-[4px] bg-[#111113] border border-white/[0.10] text-[12px] font-mono text-[#F2F2F2] hover:border-white/[0.22] disabled:opacity-50"
+          >
+            {syncing ? 'Syncing...' : 'Refresh'}
+          </button>
+          <button
+            type="button"
+            onClick={handlePickFolder}
+            className="px-3.5 py-1.5 rounded-[4px] bg-[#F2F2F2] text-[#0A0A0B] text-[12px] font-medium hover:bg-white transition-colors"
+          >
+            Add Project Folder
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {projects.map((proj) => {
-          const isSelected = proj.id === currentProjectId;
-          return (
-            <div
-              key={proj.id}
-              className={`p-5 rounded-lg bg-surface-container-low border transition-all flex flex-col justify-between gap-4 ${
-                isSelected
-                  ? 'border-primary shadow-md'
-                  : 'border-outline-variant/30 hover:border-outline-variant'
-              }`}
-            >
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-mono uppercase text-outline">
-                    {proj.default_branch || 'main'}
-                  </span>
-                  {isSelected && (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-primary/20 text-primary">
-                      CURRENT
-                    </span>
-                  )}
-                </div>
-                <h3 className="text-base font-semibold text-on-surface">{proj.name}</h3>
-                <p className="text-xs text-on-surface-variant mt-1.5 line-clamp-2 leading-relaxed">
-                  {proj.goal || proj.description || 'Autonomous development project.'}
+      {error && <ErrorBanner message={error} onRetry={refresh} />}
+      {actionMsg && <ErrorBanner message={actionMsg} />}
+      {ghStatus?.state === 'error' && ghStatus?.last_error && (
+        <ErrorBanner message={`GitHub: ${ghStatus.last_error}`} onRetry={onOpenSettings} />
+      )}
+
+      {/* Content */}
+      {loading ? (
+        <SkeletonRows rows={5} />
+      ) : projects.length === 0 ? (
+        <EmptyState
+          title="Antigravity data not found. Add a folder manually."
+          description="No Antigravity workspaces or GitHub repositories are currently tracked. Add a local folder or connect GitHub in Settings."
+          ctaLabel="Add project folder"
+          onCta={handlePickFolder}
+        />
+      ) : (
+        <div className="bg-[#111113] border border-white/[0.08] rounded-[4px] overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-white/[0.08] text-[11px] font-mono uppercase tracking-[0.06em] text-[#8A8A8E]">
+                <th className="py-3 px-4 font-medium">Project</th>
+                <th className="py-3 px-4 font-medium">Branch</th>
+                <th className="py-3 px-4 font-medium">Local State</th>
+                <th className="py-3 px-4 font-medium">GitHub</th>
+                <th className="py-3 px-4 font-medium">Antigravity</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/[0.06] text-[13px]">
+              {projects.map((proj) => {
+                const ci = proj.github?.ciState;
+                const ciBad = ci === 'FAILURE' || ci === 'ERROR';
+                const isSelected = selected?.id === proj.id;
+                return (
+                  <tr
+                    key={proj.id}
+                    onClick={() => setSelected(proj)}
+                    className={`cursor-pointer transition-colors ${
+                      isSelected ? 'bg-white/[0.05]' : 'hover:bg-white/[0.02]'
+                    }`}
+                  >
+                    <td className="py-3 px-4">
+                      <div className="font-medium text-[#F2F2F2] truncate max-w-[220px]" title={proj.name}>
+                        {proj.name}
+                      </div>
+                      <div className="text-[11px] font-mono text-[#55555A] truncate max-w-[220px]">
+                        {proj.remote_repo || (proj.source_kind === 'local' ? 'local-only' : proj.source_kind)}
+                      </div>
+                    </td>
+
+                    <td className="py-3 px-4 font-mono text-[12px] text-[#8A8A8E] whitespace-nowrap">
+                      {proj.branch || '—'}
+                    </td>
+
+                    <td className="py-3 px-4 font-mono text-[11px] tabular-nums whitespace-nowrap">
+                      {proj.source_kind === 'github' ? (
+                        <span className="text-[#55555A]">remote-only</span>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <span className={proj.dirty_count > 0 ? 'text-[#F2F2F2]' : 'text-[#55555A]'}>
+                            {proj.dirty_count} dirty
+                          </span>
+                          <span className="text-[#55555A]">·</span>
+                          <span className="text-[#8A8A8E]">+{proj.ahead}/-{proj.behind}</span>
+                        </div>
+                      )}
+                    </td>
+
+                    <td className="py-3 px-4 font-mono text-[11px] tabular-nums whitespace-nowrap">
+                      {proj.github ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-[#8A8A8E]">{proj.github.openPrsCount} PRs</span>
+                          <span className="text-[#55555A]">·</span>
+                          <span className={ciBad ? 'text-[#FF3B30] font-semibold' : 'text-[#F2F2F2]'}>
+                            {ci || 'NO CI'}
+                          </span>
+                          <span className="text-[#55555A]">·</span>
+                          <span className="text-[#55555A]">{formatRelativeTime(proj.github.pushedAt)}</span>
+                        </div>
+                      ) : (
+                        <span className="text-[#55555A]">—</span>
+                      )}
+                    </td>
+
+                    <td className="py-3 px-4 font-mono text-[11px] tabular-nums text-[#8A8A8E] whitespace-nowrap">
+                      {proj.last_opened > 0 ? formatRelativeTime(proj.last_opened) : 'Not available'}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Side Sheet for Project Detail */}
+      {selected && (
+        <div
+          className="fixed inset-0 z-50 flex justify-end bg-black/60"
+          onClick={() => setSelected(null)}
+        >
+          <aside
+            className="w-full max-w-md h-full bg-[#111113] border-l border-white/[0.10] p-6 overflow-y-auto flex flex-col gap-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 pb-4 border-b border-white/[0.08]">
+              <div className="min-w-0">
+                <span className="text-[10px] font-mono uppercase tracking-[0.08em] text-[#8A8A8E]">
+                  {selected.source_kind} · {selected.id}
+                </span>
+                <h2 className="text-[16px] font-semibold text-[#F2F2F2] truncate mt-0.5">
+                  {selected.name}
+                </h2>
+                <p className="text-[11px] font-mono text-[#55555A] truncate mt-0.5">
+                  {selected.remote_repo || 'No remote repository'}
                 </p>
               </div>
-
-              <div className="p-3 rounded bg-surface-container font-mono text-xs flex flex-col gap-1.5">
-                <div className="flex justify-between text-outline">
-                  <span>Repository:</span>
-                  <span className="text-primary truncate max-w-[150px]">{proj.repo_url || 'local/workspace'}</span>
-                </div>
-                <div className="flex justify-between text-outline">
-                  <span>Created:</span>
-                  <span className="text-on-surface">{proj.created_at?.slice(0, 10)}</span>
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-outline-variant/20 flex items-center justify-between gap-2">
-                <button
-                  onClick={() => onSelectProject(proj.id)}
-                  disabled={isSelected}
-                  className={`flex-1 py-1.5 px-3 rounded text-xs font-medium transition-colors ${
-                    isSelected
-                      ? 'bg-surface-container text-outline cursor-default'
-                      : 'bg-surface-container-high hover:bg-surface-bright text-on-surface'
-                  }`}
-                >
-                  {isSelected ? 'Active Workspace' : 'Switch Workspace'}
-                </button>
-                <button
-                  onClick={onTriggerPlanModal}
-                  className="py-1.5 px-3 rounded bg-primary/10 hover:bg-primary/20 text-primary text-xs font-mono font-medium transition-colors"
-                >
-                  Plan
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* New Project Modal */}
-      {showNewModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-xl bg-surface-container-low border border-outline-variant/40 shadow-2xl p-6 flex flex-col gap-4">
-            <div className="flex items-center justify-between border-b border-outline-variant/20 pb-3">
-              <h3 className="text-base font-semibold text-on-surface">Start New Initiative</h3>
-              <button onClick={() => setShowNewModal(false)} className="text-outline hover:text-on-surface">
-                <span className="material-symbols-outlined text-[18px]">close</span>
+              <button
+                type="button"
+                onClick={() => setSelected(null)}
+                className="px-2 py-1 text-[12px] font-mono text-[#8A8A8E] hover:text-[#F2F2F2]"
+              >
+                ✕
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="flex flex-col gap-3 font-sans text-sm">
-              <div>
-                <label className="text-xs font-mono text-outline uppercase block mb-1">Project Name</label>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Canteen Pre-Ordering System"
-                  className="w-full bg-surface-container-lowest border border-outline-variant/40 rounded px-3 py-2 text-on-surface placeholder:text-outline focus:outline-none focus:border-primary"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-mono text-outline uppercase block mb-1">High-Level Goal</label>
-                <textarea
-                  required
-                  rows={3}
-                  value={goal}
-                  onChange={(e) => setGoal(e.target.value)}
-                  placeholder="Describe target features, user stories, and architecture..."
-                  className="w-full bg-surface-container-lowest border border-outline-variant/40 rounded px-3 py-2 text-on-surface placeholder:text-outline focus:outline-none focus:border-primary"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-mono text-outline uppercase block mb-1">Git Repository URL (Optional)</label>
-                <input
-                  type="url"
-                  value={repoUrl}
-                  onChange={(e) => setRepoUrl(e.target.value)}
-                  placeholder="https://github.com/org/repo"
-                  className="w-full bg-surface-container-lowest border border-outline-variant/40 rounded px-3 py-2 text-on-surface placeholder:text-outline focus:outline-none focus:border-primary"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-outline-variant/20">
+            {/* Actions */}
+            <div className="flex flex-wrap gap-2">
+              {selected.source_kind !== 'github' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleOpen(selected.id, 'antigravity')}
+                    className="px-3 py-1.5 rounded-[4px] bg-[#F2F2F2] text-[#0A0A0B] text-[12px] font-medium hover:bg-white"
+                  >
+                    Open in Antigravity
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpen(selected.id, 'folder')}
+                    className="px-3 py-1.5 rounded-[4px] bg-[#0A0A0B] border border-white/[0.10] text-[12px] font-mono text-[#F2F2F2] hover:border-white/[0.25]"
+                  >
+                    Open Folder
+                  </button>
+                </>
+              )}
+              {selected.remote_repo && (
                 <button
                   type="button"
-                  onClick={() => setShowNewModal(false)}
-                  className="px-4 py-2 rounded bg-surface-container text-outline hover:text-on-surface text-xs"
+                  onClick={() => handleOpen(selected.id, 'github')}
+                  className="px-3 py-1.5 rounded-[4px] bg-[#0A0A0B] border border-white/[0.10] text-[12px] font-mono text-[#F2F2F2] hover:border-white/[0.25]"
                 >
-                  Cancel
+                  Open GitHub
                 </button>
-                <button
-                  type="submit"
-                  disabled={busy || !name.trim()}
-                  className="px-4 py-2 rounded bg-primary text-on-primary font-medium text-xs hover:bg-primary-container disabled:opacity-50"
-                >
-                  {busy ? 'Initializing...' : 'Launch Project'}
-                </button>
-              </div>
-            </form>
-          </div>
+              )}
+              <button
+                type="button"
+                onClick={() => handleExclude(selected.id)}
+                className="px-3 py-1.5 rounded-[4px] border border-[#FF3B30]/40 text-[12px] font-mono text-[#FF3B30] hover:bg-[#FF3B30]/10 ml-auto"
+              >
+                Exclude
+              </button>
+            </div>
+
+            {/* Recent Commit */}
+            <div className="p-4 rounded-[4px] bg-[#0A0A0B] border border-white/[0.08] flex flex-col gap-1.5">
+              <span className="text-[10px] font-mono uppercase tracking-[0.06em] text-[#8A8A8E]">
+                Latest Commit
+              </span>
+              {selected.last_commit ? (
+                <>
+                  <div className="text-[12px] text-[#F2F2F2]">{selected.last_commit.message}</div>
+                  <div className="text-[11px] font-mono text-[#55555A] tabular-nums">
+                    {selected.last_commit.sha} · {formatRelativeTime(selected.last_commit.date)}
+                  </div>
+                </>
+              ) : (
+                <span className="text-[12px] font-mono text-[#55555A]">Not available</span>
+              )}
+            </div>
+
+            {/* Open Pull Requests */}
+            <div className="flex flex-col gap-2">
+              <span className="text-[10px] font-mono uppercase tracking-[0.06em] text-[#8A8A8E]">
+                Open Pull Requests ({selected.github?.openPrsCount ?? 0})
+              </span>
+              {selected.github && selected.github.openPrs.length > 0 ? (
+                <div className="divide-y divide-white/[0.06] border border-white/[0.08] rounded-[4px] bg-[#0A0A0B]">
+                  {selected.github.openPrs.map((pr) => (
+                    <div key={pr.number} className="p-3 flex flex-col gap-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[12px] text-[#F2F2F2] truncate">
+                          #{pr.number} {pr.title}
+                        </span>
+                        <span
+                          className={`text-[10px] font-mono shrink-0 ${
+                            pr.ciState === 'FAILURE' || pr.ciState === 'ERROR'
+                              ? 'text-[#FF3B30]'
+                              : 'text-[#8A8A8E]'
+                          }`}
+                        >
+                          {pr.ciState || 'PENDING'}
+                        </span>
+                      </div>
+                      <div className="text-[11px] font-mono text-[#55555A] tabular-nums">
+                        {pr.author || 'unknown'} · {pr.reviewDecision || (pr.isDraft ? 'DRAFT' : 'OPEN')} ·{' '}
+                        {formatRelativeTime(pr.updatedAt)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-4 rounded-[4px] bg-[#0A0A0B] border border-white/[0.08] text-[12px] font-mono text-[#55555A]">
+                  {selected.github ? 'No open pull requests.' : 'Connect GitHub in Settings to view PRs and CI.'}
+                </div>
+              )}
+            </div>
+          </aside>
         </div>
       )}
     </div>

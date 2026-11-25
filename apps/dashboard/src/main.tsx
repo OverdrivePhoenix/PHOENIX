@@ -14,7 +14,11 @@ import { VoiceOverlay } from './components/VoiceOverlay';
 import { JarvisModal } from './components/JarvisModal';
 import { PlanModal } from './components/PlanModal';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL ||
+  (typeof window !== 'undefined' && window.location.origin && !window.location.origin.includes('5173')
+    ? window.location.origin
+    : 'http://localhost:8000');
 
 export function App() {
   const [activeView, setActiveView] = useState<ViewType>('command-center');
@@ -352,6 +356,7 @@ export function App() {
               onSelectProject={setCurrentProjectId}
               onCreateProject={handleCreateProject}
               onTriggerPlanModal={() => setIsPlanModalOpen(true)}
+              onOpenSettings={() => setActiveView('settings')}
             />
           )}
 
