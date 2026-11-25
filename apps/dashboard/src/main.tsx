@@ -9,8 +9,6 @@ import { AgentsView } from './views/AgentsView';
 import { ProjectsView } from './views/ProjectsView';
 import { SettingsView } from './views/SettingsView';
 import { ActivityView } from './views/ActivityView';
-import { LiveVoiceView } from './views/LiveVoiceView';
-import { DynamicIslandSuiteView } from './views/DynamicIslandSuiteView';
 import { DynamicIsland } from './components/DynamicIsland';
 import { VoiceOverlay } from './components/VoiceOverlay';
 import { JarvisModal } from './components/JarvisModal';
@@ -315,8 +313,8 @@ export function App() {
   }
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-surface-container-lowest text-on-surface overflow-hidden">
-      {/* Frameless Desktop Titlebar with Embedded Dynamic Island */}
+    <div className="flex flex-col h-screen w-screen bg-[#0A0A0B] text-[#F2F2F2] overflow-hidden">
+      {/* Main Window Header */}
       <TitleBar
         currentProjectName={currentProject?.name}
         currentBranch={currentProject?.default_branch || 'feat/checkout-flow'}
@@ -324,8 +322,6 @@ export function App() {
         isEmergencyPaused={isEmergencyPaused}
         onEmergencyPauseToggle={handleEmergencyPause}
         onOpenJarvisModal={() => setIsJarvisModalOpen(true)}
-        onOpenLiveVoice={() => setActiveView('live-voice')}
-        onOpenDynamicIslandSuite={() => setActiveView('dynamic-island')}
         pendingApproval={
           topPendingApproval
             ? {
@@ -391,65 +387,6 @@ export function App() {
           {activeView === 'settings' && <SettingsView />}
 
           {activeView === 'activity' && <ActivityView logs={executionLogs} />}
-
-          {activeView === 'live-voice' && (
-            <div className="flex-1 flex flex-col h-[calc(100vh-2.5rem)] bg-surface-container-lowest overflow-hidden relative">
-              <div className="h-12 px-6 border-b border-outline-variant/30 flex items-center justify-between bg-surface-container-low/80 backdrop-blur-md z-10 shrink-0">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary text-[18px]">graphic_eq</span>
-                  <span className="text-sm font-semibold tracking-wide">Live Conversational Voice Cockpit</span>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-container border border-outline-variant/40 text-primary">
-                    NATURAL HUMAN VOICE
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      fetch(`${API_BASE}/overlay/toggle`, { method: 'POST' }).catch(() => {});
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-mono font-bold hover:bg-primary-container transition-all shadow-sm"
-                    title="Pop out into a true frameless, transparent screen overlay floating over Windows"
-                  >
-                    <span className="material-symbols-outlined text-[15px]">picture_in_picture_alt</span>
-                    <span>Float on Desktop Screen</span>
-                  </button>
-                  <button
-                    onClick={() => setActiveView('command-center')}
-                    className="px-3 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-outline hover:text-on-surface text-xs font-mono transition-colors"
-                  >
-                    Back to Dashboard
-                  </button>
-                </div>
-              </div>
-              <div className="flex-1 flex items-center justify-center p-6 bg-gradient-to-b from-surface-container-lowest to-[#08090b]">
-                <VoiceOverlay
-                  isStandaloneOverlay={false}
-                  currentProjectName={currentProject?.name}
-                  onOpenCommandCenter={() => setActiveView('command-center')}
-                  onCloseOverlay={() => setActiveView('command-center')}
-                  onSendCommand={async (cmd, tone) => {
-                    const res = await fetch(`${API_BASE}/jarvis/command`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ transcript: cmd, tone })
-                    }).then((r) => r.json());
-                    await refreshData();
-                    return { intent: res.intent, reply: res.spoken_reply };
-                  }}
-                />
-              </div>
-            </div>
-          )}
-
-          {activeView === 'dynamic-island' && (
-            <DynamicIslandSuiteView
-              currentProjectName={currentProject?.name}
-              dailySpend={18.42}
-              onApproveAction={handleApproveAction}
-              onDenyAction={handleDenyAction}
-              onOpenVoice={() => setActiveView('live-voice')}
-            />
-          )}
         </main>
       </div>
 
@@ -459,7 +396,7 @@ export function App() {
         onClose={() => setIsJarvisModalOpen(false)}
         briefingScript={jarvisBriefing}
         onSendCommand={handleJarvisCommand}
-        onOpenLiveVoice={() => setActiveView('live-voice')}
+        onOpenLiveVoice={() => setActiveView('settings')}
       />
 
       {/* Plan Milestone Modal */}

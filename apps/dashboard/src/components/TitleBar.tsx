@@ -1,5 +1,4 @@
 import React from 'react';
-import { DynamicIsland } from './DynamicIsland';
 
 interface TitleBarProps {
   currentProjectName: string;
@@ -7,7 +6,7 @@ interface TitleBarProps {
   jarvisStatus: string;
   isEmergencyPaused: boolean;
   onEmergencyPauseToggle: () => void;
-  onOpenJarvisModal: () => void;
+  onOpenJarvisModal?: () => void;
   onOpenLiveVoice?: () => void;
   onOpenDynamicIslandSuite?: () => void;
   pendingApproval?: {
@@ -22,110 +21,88 @@ interface TitleBarProps {
   onDenyAction?: (id: string, token: string) => void;
 }
 
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL ||
+  (typeof window !== 'undefined' && window.location.origin && !window.location.origin.includes('5173')
+    ? window.location.origin
+    : 'http://localhost:8000');
+
 export const TitleBar: React.FC<TitleBarProps> = ({
   currentProjectName,
   currentBranch,
-  jarvisStatus,
   isEmergencyPaused,
   onEmergencyPauseToggle,
-  onOpenJarvisModal,
-  onOpenLiveVoice,
-  onOpenDynamicIslandSuite,
-  pendingApproval,
-  activeAgent = 'SWE-03 · Run',
-  dailySpend = 18.42,
-  onApproveAction,
-  onDenyAction
+  activeAgent = 'SWE-03',
+  dailySpend = 18.42
 }) => {
+  const projectLabel = currentProjectName || 'College Canteen App';
+  const branchLabel = currentBranch || 'feat/checkout-flow';
+
   return (
-    <header className="titlebar-drag-region h-11 w-full bg-surface-container-lowest border-b border-outline-variant/30 flex items-center justify-between px-3 z-50 text-xs font-mono relative overflow-visible">
-      {/* Left: Window Branding & Title */}
-      <div className="flex items-center gap-3 titlebar-no-drag">
-        <div className="flex items-center gap-2">
-          <span className="w-5 h-5 rounded bg-primary/20 text-primary font-bold flex items-center justify-center text-[11px] border border-primary/40">
-            P
-          </span>
-          <span className="font-semibold text-on-surface tracking-wider">PHOENIX</span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-container-high text-outline">DESKTOP v1.0</span>
-        </div>
+    <header className="h-12 w-full bg-[#0A0A0B] border-b border-white/[0.08] flex items-center justify-between gap-6 px-6 shrink-0 select-none">
+      {/* Left: Wordmark + Project + Branch (non-overlapping flex) */}
+      <div className="flex items-center gap-4 min-w-0">
+        <span
+          className="font-display text-[18px] tracking-[0.08em] text-[#F2F2F2] whitespace-nowrap shrink-0"
+          title="Project PHOENIX"
+        >
+          PHOENIX
+        </span>
 
-        <div className="h-3 w-[1px] bg-outline-variant/40" />
+        <span className="h-3.5 w-px bg-white/[0.08] shrink-0" />
 
-        <div className="flex items-center gap-1.5 text-on-surface-variant">
-          <span className="material-symbols-outlined text-[14px] text-outline">folder</span>
-          <span className="text-on-surface font-medium">{currentProjectName || 'Canteen App'}</span>
-        </div>
+        <span
+          className="text-[13px] font-medium text-[#F2F2F2] truncate min-w-0"
+          title={projectLabel}
+        >
+          {projectLabel}
+        </span>
 
-        <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container text-primary text-[11px]">
-          <span className="material-symbols-outlined text-[13px]">alt_route</span>
-          <span>{currentBranch || 'feat/checkout-flow'}</span>
-        </div>
+        <span
+          className="text-[11px] font-mono text-[#8A8A8E] px-2 py-0.5 border border-white/[0.08] rounded-[4px] bg-[#111113] whitespace-nowrap truncate max-w-[180px]"
+          title={branchLabel}
+        >
+          {branchLabel}
+        </span>
       </div>
 
-      {/* Center: Compact Status Badge & Top Notch Summon */}
-      <div className="absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 titlebar-no-drag z-10 flex items-center gap-2">
+      {/* Right: Telemetry Readout + Overlay Toggle + Emergency Pause (single row, no overlap) */}
+      <div className="flex items-center gap-4 shrink-0">
         <button
           onClick={() => {
             fetch(`${API_BASE}/overlay/toggle`, { method: 'POST' }).catch(() => {});
           }}
-          className="flex items-center gap-2 px-3 py-1 rounded-full bg-surface-container border border-outline-variant/30 text-[11px] font-mono text-outline hover:text-on-surface hover:border-primary/40 transition-colors"
+          className="flex items-center gap-2.5 px-2.5 py-1 border border-white/[0.08] rounded-[4px] bg-[#111113] hover:border-white/[0.20] transition-colors duration-150"
           title="Toggle Top-Center Dynamic Notch Overlay"
         >
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span>{activeAgent}</span>
-          <span className="text-outline-variant">|</span>
-          <span className="text-emerald-400 font-semibold">${dailySpend.toFixed(2)}</span>
-          <span className="material-symbols-outlined text-[13px] text-primary">graphic_eq</span>
+          <span
+            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+              isEmergencyPaused ? 'bg-[#FF3B30]' : 'bg-[#F2F2F2]'
+            }`}
+          />
+          <span className="text-[11px] font-mono text-[#F2F2F2] whitespace-nowrap">
+            {activeAgent.replace(' · Run', '')}
+          </span>
+          <span className="h-2.5 w-px bg-white/[0.08]" />
+          <span className="text-[11px] font-mono tabular-nums text-[#8A8A8E] whitespace-nowrap">
+            ${dailySpend.toFixed(2)}
+          </span>
         </button>
-      </div>
 
-      {/* Right: Emergency Pause & Window Controls */}
-      <div className="flex items-center gap-2 titlebar-no-drag">
         <button
           onClick={onEmergencyPauseToggle}
-          className={`flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-medium transition-colors ${
+          className={`flex items-center gap-1.5 px-3 py-1 rounded-[4px] text-[11px] font-mono uppercase tracking-wider whitespace-nowrap transition-colors duration-150 ${
             isEmergencyPaused
-              ? 'bg-error text-surface font-bold animate-pulse'
-              : 'bg-surface-container-high hover:bg-error/20 text-error border border-error/30'
+              ? 'bg-[#FF3B30] text-[#0A0A0B] font-semibold'
+              : 'bg-[#111113] text-[#FF3B30] border border-[#FF3B30]/40 hover:bg-[#FF3B30]/10'
           }`}
+          title={isEmergencyPaused ? 'Resume autonomous fleet' : 'Emergency pause all agents'}
         >
           <span className="material-symbols-outlined text-[14px]">
-            {isEmergencyPaused ? 'play_arrow' : 'pause_circle'}
+            {isEmergencyPaused ? 'play_arrow' : 'pause'}
           </span>
-          <span>{isEmergencyPaused ? 'RESUME EXECUTION' : 'EMERGENCY PAUSE'}</span>
+          <span>{isEmergencyPaused ? 'RESUME' : 'EMERGENCY PAUSE'}</span>
         </button>
-
-        <div className="h-3 w-[1px] bg-outline-variant/40 mx-1" />
-
-        {/* Window action buttons */}
-        <div className="flex items-center gap-1 text-outline">
-          <button
-            onClick={onOpenDynamicIslandSuite}
-            className="px-2 py-0.5 rounded bg-surface-container hover:bg-surface-container-high text-outline hover:text-primary text-[10px] font-mono flex items-center gap-1"
-            title="Open Dynamic Island Specimen Suite"
-          >
-            <span className="material-symbols-outlined text-[12px]">view_agenda</span>
-            <span>Suite</span>
-          </button>
-          <button
-            className="w-6 h-6 flex items-center justify-center hover:bg-surface-container-high rounded text-outline hover:text-on-surface"
-            title="Minimize to Tray"
-          >
-            <span className="material-symbols-outlined text-[14px]">remove</span>
-          </button>
-          <button
-            className="w-6 h-6 flex items-center justify-center hover:bg-surface-container-high rounded text-outline hover:text-on-surface"
-            title="Maximize"
-          >
-            <span className="material-symbols-outlined text-[13px]">crop_square</span>
-          </button>
-          <button
-            className="w-6 h-6 flex items-center justify-center hover:bg-error hover:text-surface rounded text-outline"
-            title="Close to System Tray"
-          >
-            <span className="material-symbols-outlined text-[14px]">close</span>
-          </button>
-        </div>
       </div>
     </header>
   );

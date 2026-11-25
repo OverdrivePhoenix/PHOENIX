@@ -7,6 +7,7 @@ block_cipher = None
 
 datas_list = [
     ('apps/dashboard/dist', 'apps/dashboard/dist'),
+    ('apps/dashboard/src/constants/overlayTokens.json', 'constants'),
     ('phoenix_icon.ico', '.'),
     ('phoenix_icon.png', '.'),
     ('apps/local-node/app', 'apps/local-node/app'),

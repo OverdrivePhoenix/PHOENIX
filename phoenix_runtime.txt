@@ -1,0 +1,17 @@
+2026-11-25 13:40:15 dpi awareness set: True (PER_MONITOR_AWARE_V2 = -4)
+2026-11-25 13:40:15 dpi awareness set(-4): False (err=5); trying SetProcessDpiAwareness(2)
+2026-11-25 13:40:18 [A2:verify_root_rgn] Root rgn intact: t=3, rb=(243, 0, 543, 54)
+2026-11-25 13:40:18 [A1:after_set_notch_region] hwnd=0x1106b4 class=WindowsForms10.Window.8.app.0.aec740_r38_ad1 rect=(887, 0, 1673, 300) rgn=(3, (243, 0, 543, 54)) root=0x1106b4 root_class=WindowsForms10.Window.8.app.0.aec740_r38_ad1 root_rgn=(3, (243, 0, 543, 54))
+2026-11-25 13:40:18     child hwnd=0x220454 class=WindowsForms10.Window.8.app.0.aec740_r38_ad1 rect=(887, 0, 1673, 300) rgn=(0, (0, 0, 0, 0))
+2026-11-25 13:40:18     child hwnd=0x100808 class=Chrome_WidgetWin_0 rect=(887, 0, 1673, 300) rgn=(0, (0, 0, 0, 0))
+2026-11-25 13:40:18     child hwnd=0x1505d6 class=Chrome_WidgetWin_1 rect=(887, 0, 1673, 300) rgn=(0, (0, 0, 0, 0))
+2026-11-25 13:40:18     child hwnd=0x1b0606 class=Chrome_RenderWidgetHostHWND rect=(887, 0, 1673, 300) rgn=(0, (0, 0, 0, 0))
+2026-11-25 13:40:18 [A1:overlap] hwnd=0x1106b4 class=WindowsForms10.Window.8.app.0.aec740_r38_ad1 title='PHOENIX Notch' rect=(887, 0, 1673, 300) ex=0x50008 pid=2476 ours=True
+2026-11-25 13:40:18 [A1:a_center_notch] point=(1280,27) -> hwnd=0x1b0606 class=Chrome_RenderWidgetHostHWND pid=30388 ours=False
+2026-11-25 13:40:18 [A1:pixel:a_center_notch] (1280,27) rgb=None
+2026-11-25 13:40:18 [A1:b_below_notch] point=(1280,74) -> hwnd=0x0 class= pid=0 ours=False
+2026-11-25 13:40:18 [A1:pixel:b_below_notch] (1280,74) rgb=None
+2026-11-25 13:40:18 [A1:c_left_of_notch] point=(1110,10) -> hwnd=0x0 class= pid=0 ours=False
+2026-11-25 13:40:18 [A1:pixel:c_left_of_notch] (1110,10) rgb=None
+2026-11-25 13:40:18 [A1:d_right_of_notch] point=(1450,10) -> hwnd=0x0 class= pid=0 ours=False
+2026-11-25 13:40:18 [A1:pixel:d_right_of_notch] (1450,10) rgb=None
